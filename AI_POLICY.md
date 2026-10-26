@@ -17,8 +17,9 @@ file), from requirements and direction the developer provides.
 
 This repository starts without its development history, and its commits
 do not show the AI involvement: no `Co-Authored-By` trailers, and commit
-messages written by the developer so that they do not reveal which parts
-the agent wrote. This is deliberate. It is part of the experiment
+messages that do not reveal which parts the agent wrote. The developer
+makes the commits; their messages are suggested by the IDE's AI
+assistant. This is deliberate. It is part of the experiment
 described in the README, which tests whether anyone can tell from the
 app, the code or the history how the work was done.
 

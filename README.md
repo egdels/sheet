@@ -68,9 +68,10 @@ demonstration. F-Droid is discussing how to mark apps written with AI
 [#710](https://gitlab.com/fdroid/admin/-/work_items/710)), largely by
 scanning for tell-tale signs: agent instruction files, `.gitignore`
 entries, `Co-Authored-By` trailers, commits by AI tools. This repository
-has none of them: the history was started fresh, commit messages are
-written by hand, the agent's instruction file is never committed and the
-comments are stripped (see [AI_POLICY.md](AI_POLICY.md)). Such scans can
+has none of them: the history was started fresh, the commits carry no
+AI attribution (the developer commits them, with messages suggested by
+the IDE's AI assistant), the agent's instruction file is never committed
+and the comments are stripped (see [AI_POLICY.md](AI_POLICY.md)). Such scans can
 only find what developers leave in; what is removed on purpose they
 cannot see. Disclosing it, as here, is the only reliable signal.
 
