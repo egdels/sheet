@@ -18,7 +18,7 @@ by AI is viewed critically: as "AI slop", and in the discussion about
 marking it as an anti-feature. Sheet tests two claims in public:
 
 1. An app built mostly by an AI coding agent, directed and checked by an
-   experienced developer, can be **better than
+   experienced developer, can be **better than the
    original**, MakeACopy, by the same developer.
 2. **You could not tell.** Nothing in the app or its source gives the AI
    away: remove `AI_POLICY.md`, this section and the script that strips
@@ -61,6 +61,18 @@ What this does **not** show:
 
 Judge for yourself: run the evaluations, read the code, compare the
 apps.
+
+Sheet is not submitted to F-Droid or any other app store; it is a
+demonstration. F-Droid is discussing how to mark apps written with AI
+([#641](https://gitlab.com/fdroid/admin/-/work_items/641),
+[#710](https://gitlab.com/fdroid/admin/-/work_items/710)), largely by
+scanning for tell-tale signs: agent instruction files, `.gitignore`
+entries, `Co-Authored-By` trailers, commits by AI tools. This repository
+has none of them: the history was started fresh, commit messages are
+written by hand, the agent's instruction file is never committed and the
+comments are stripped (see [AI_POLICY.md](AI_POLICY.md)). Such scans can
+only find what developers leave in; what is removed on purpose they
+cannot see. Disclosing it, as here, is the only reliable signal.
 
 ## What it does
 
