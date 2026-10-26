@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="camera_needed">Sheet scannt mit der Kamera. Nichts verlässt das Telefon.</string>
+    <string name="allow_camera">Kamera erlauben</string>
+    <string name="take_photo">Foto aufnehmen</string>
+    <string name="retake">Neu aufnehmen</string>
+    <string name="use_page">Seite übernehmen</string>
+    <plurals name="pages">
+        <item quantity="one">%d Seite</item>
+        <item quantity="other">%d Seiten</item>
+    </plurals>
+    <string name="page_number">Seite %d</string>
+    <string name="reading_text">Text wird gelesen…</string>
+    <string name="add_page">Seite hinzufügen</string>
+    <string name="discard">Verwerfen</string>
+    <string name="keep">Behalten</string>
+    <plurals name="discard_question">
+        <item quantity="one">Diese Seite verwerfen?</item>
+        <item quantity="other">Alle %d Seiten verwerfen?</item>
+    </plurals>
+    <string name="move_earlier">Nach vorn</string>
+    <string name="move_later">Nach hinten</string>
+    <string name="turn">Drehen</string>
+    <string name="delete_page">Seite löschen</string>
+    <string name="save_pdf">Als PDF sichern</string>
+    <string name="saves_to">Sichert in %s</string>
+    <string name="change_folder">Ändern</string>
+    <string name="waiting_for_text">Warte auf den Text der letzten Seiten…</string>
+    <string name="saved_as">%1$s in %2$s gesichert</string>
+    <string name="save_failed">Sichern in %s fehlgeschlagen</string>
+    <string name="open">Öffnen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="edit_corners">Ecken bearbeiten</string>
+    <string name="share">Teilen</string>
+</resources>

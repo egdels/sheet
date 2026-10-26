@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (C) 2026 Christian Kierdorf
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M41,35 H60 L67,42 V73 H41 Z M45,49 H63 V51.2 H45 Z M45,55 H63 V57.2 H45 Z M45,61 H63 V63.2 H45 Z M45,67 H56 V69.2 H45 Z" />
+    <path
+        android:pathData="M35,36 V30 H41 M67,30 H73 V36 M73,72 V78 H67 M41,78 H35 V72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

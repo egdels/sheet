@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Sheet</string>
+    <string name="camera_needed">Sheet scans with the camera. Nothing leaves the phone.</string>
+    <string name="allow_camera">Allow camera</string>
+    <string name="take_photo">Take photo</string>
+    <string name="retake">Retake</string>
+    <string name="use_page">Use page</string>
+    <plurals name="pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <string name="page_number">Page %d</string>
+    <string name="reading_text">Reading text…</string>
+    <string name="add_page">Add page</string>
+    <string name="discard">Discard</string>
+    <string name="keep">Keep</string>
+    <plurals name="discard_question">
+        <item quantity="one">Discard this page?</item>
+        <item quantity="other">Discard all %d pages?</item>
+    </plurals>
+    <string name="move_earlier">Move earlier</string>
+    <string name="move_later">Move later</string>
+    <string name="turn">Turn</string>
+    <string name="delete_page">Delete page</string>
+    <string name="save_pdf">Save PDF</string>
+    <string name="saves_to">Saves to %s</string>
+    <string name="change_folder">Change</string>
+    <string name="waiting_for_text">Waiting for the text of the last pages…</string>
+    <string name="saved_as">Saved %1$s in %2$s</string>
+    <string name="save_failed">Could not save in %s</string>
+    <string name="open">Open</string>
+    <string name="cancel">Cancel</string>
+    <string name="edit_corners">Edit corners</string>
+    <string name="share">Share</string>
+</resources>
