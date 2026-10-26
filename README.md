@@ -18,7 +18,7 @@ by AI is viewed critically: as "AI slop", and in the discussion about
 marking it as an anti-feature. Sheet tests two claims in public:
 
 1. An app built mostly by an AI coding agent, directed and checked by an
-   experienced developer, can be **better than the hand-written
+   experienced developer, can be **better than
    original**, MakeACopy, by the same developer.
 2. **You could not tell.** Nothing in the app or its source gives the AI
    away: remove `AI_POLICY.md`, this section and the script that strips
