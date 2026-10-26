@@ -1,0 +1,9 @@
+.DS_Store
+build/
+.gradle/
+.kotlin/
+local.properties
+.idea/
+__pycache__/
+app/libs/
+app/src/main/jniLibs/
