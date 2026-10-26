@@ -1,0 +1,19 @@
+Sheet is an offline document scanner. Point the camera at a page, Sheet finds its corners, straightens it and reads the text, and you get a searchable PDF in a folder you chose. No account, no cloud, no ads, no settings screen, and no network permission: nothing leaves your phone.
+
+<b>Finds the page while you aim</b>
+A small model trained for this outlines the page live in the preview and again on the photo, also when the page lies at an angle. The outline then snaps onto the edges of the paper. If it is off, drag a corner under a magnifier.
+
+<b>Straight pages in their real shape</b>
+Sheet recovers the paper's proportions from the perspective, so a page photographed at a slant comes out as A4, not squashed. Pages are turned upright by themselves, from the direction of their text. Tap a page later to cut it out again.
+
+<b>Reads the text offline</b>
+PaddleOCR recognises the text on the phone, in the phone's language: Latin scripts, Cyrillic, Greek, Arabic, Devanagari, Thai, Chinese and Japanese. Lines that are slightly tilted are followed, and newspaper or magazine pages are read column by column.
+
+<b>Page after page</b>
+Scan a page, the text is read in the background, scan the next. Reorder, turn and delete pages. The document is kept until you save it, even if the app is closed.
+
+<b>Searchable PDFs</b>
+Each page as photographed, with the text as an invisible layer you can search, select and copy, in any script. Saved to one folder you pick once (ideal for Nextcloud, Syncthing or paperless-ngx), or shared to another app.
+
+<b>Open source</b>
+GPL-3.0. Everything is built from source, including the inference engine.
