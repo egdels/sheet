@@ -1,1 +1,1 @@
-First release: live page outline, crop with magnifier, pages set upright, offline OCR in many scripts, multi-page documents, searchable PDFs saved to a folder or shared.
+First release: live page outline, crop with magnifier, pages set upright, offline OCR in many scripts, multi-page documents, searchable PDFs saved to a folder or shared. Portrait and landscape, light and dark.
