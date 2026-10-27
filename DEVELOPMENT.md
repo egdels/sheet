@@ -163,7 +163,10 @@ changes with the eval, absolute numbers for hard photos come from a device.
   (MakeACopy's "best quality" option; 1536 lost small_text 0.025 -> 0.076)
   and the multilingual second pass for unsure Latin lines (also measured).
   Text boxes follow a tilted line (MakeACopy's were axis-aligned: CER 0.74
-  vs 0.01 at 2 degrees of skew). Multi-column reading order always on.
+  vs 0.01 at 2 degrees of skew). Multi-column reading order always on;
+  tall, narrow boxes (vertical margin notes, at most a quarter of the boxes)
+  are left out of the column analysis and read last, else a note split in
+  two can make a column of its own (seen in MakeACopy on an appointment card).
   Not ported: vertical CJK, low-contrast crop enhancement, MakeACopy's
   dictionary post-correction; add them when the eval shows a need.
 - **Scanning is a loop** (as in Lens): camera -> crop -> "Use page" ->
