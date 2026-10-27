@@ -24,8 +24,21 @@ object ColumnLayout {
     private const val CROSSING_MIN_EXTENT_FACTOR = 0.25
     private const val ALIGNED_ROW_FRACTION = 0.6
     private const val ALIGN_TOLERANCE_FACTOR = 0.5
+    private const val TALL_BOX_ASPECT = 2.0
+    private const val TALL_BOX_MAX_FRACTION = 0.25
 
     fun segments(boxes: List<Box>, rtl: Boolean): List<List<Int>> {
+        if (boxes.isEmpty()) return emptyList()
+        val median = boxes.map { it.height }.sorted()[boxes.size / 2]
+        val tall = boxes.indices.filter { boxes[it].height > TALL_BOX_ASPECT * boxes[it].width && boxes[it].height > TALL_BOX_ASPECT * median }
+        if (tall.isEmpty() || tall.size > TALL_BOX_MAX_FRACTION * boxes.size) return horizontalSegments(boxes, rtl)
+        val keep = boxes.indices.filter { it !in tall }
+        val segments = horizontalSegments(keep.map { boxes[it] }, rtl)
+        if (segments.isEmpty()) return segments
+        return segments.map { seg -> seg.map { keep[it] } } + listOf(tall.sortedBy { boxes[it].top })
+    }
+
+    private fun horizontalSegments(boxes: List<Box>, rtl: Boolean): List<List<Int>> {
         if (boxes.size < MIN_COLUMNS * MIN_LINES_PER_COLUMN) return emptyList()
         val gutters = valleys(boxes.indices.toList(), boxes, boxes.minOf { it.left }, width(boxes), medianHeight(boxes)).map { (it.first + it.second) / 2 }
         val fragments = fragments(boxes, gutters)
