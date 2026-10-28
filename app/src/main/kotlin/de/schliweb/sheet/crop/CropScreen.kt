@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import de.schliweb.sheet.ui.PageOutline
 import de.schliweb.sheet.ui.isLandscape
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.width
@@ -35,7 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,8 +52,6 @@ import de.schliweb.sheet.Screen
 import de.schliweb.sheet.core.Point
 import kotlin.math.hypot
 import kotlin.math.min
-
-private val OUTLINE = Color(0xFF00C853)
 
 @Composable
 fun CropScreen(
@@ -156,14 +157,20 @@ private fun CropArea(crop: Screen.Crop, onMove: (Int, Point) -> Unit, modifier: 
                     for (p in pts.drop(1)) lineTo(p.x, p.y)
                     close()
                 }
-                drawPath(path, OUTLINE.copy(alpha = 0.15f))
-                drawPath(path, OUTLINE, style = Stroke(width = 2.dp.toPx()))
+                val outside = Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    addRect(Rect(left, top, left + crop.photo.width * s, top + crop.photo.height * s))
+                    addPath(path)
+                }
+                drawPath(outside, Color.Black.copy(alpha = 0.5f))
+                drawPath(path, PageOutline, style = Stroke(width = 2.dp.toPx()))
                 for ((i, p) in pts.withIndex()) {
                     if (i == dragging) {
-                        drawCircle(OUTLINE, radius = 2.dp.toPx(), center = p)
+                        drawCircle(PageOutline, radius = 2.dp.toPx(), center = p)
                     } else {
-                        drawCircle(Color.White.copy(alpha = 0.6f), radius = 14.dp.toPx(), center = p)
-                        drawCircle(OUTLINE, radius = 14.dp.toPx(), center = p, style = Stroke(width = 2.dp.toPx()))
+                        drawCircle(Color.White, radius = 12.dp.toPx(), center = p, style = Stroke(width = 5.dp.toPx()))
+                        drawCircle(PageOutline, radius = 12.dp.toPx(), center = p, style = Stroke(width = 2.5.dp.toPx()))
+                        drawCircle(PageOutline, radius = 2.dp.toPx(), center = p)
                     }
                 }
             }
