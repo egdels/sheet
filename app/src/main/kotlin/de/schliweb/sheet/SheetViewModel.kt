@@ -21,6 +21,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.schliweb.sheet.camera.toUpright
+import de.schliweb.sheet.core.PageSize
 import de.schliweb.sheet.core.Point
 import de.schliweb.sheet.core.Quad
 import de.schliweb.sheet.core.corners.CornerDetector
@@ -28,6 +29,7 @@ import de.schliweb.sheet.core.corners.EdgeSnap
 import de.schliweb.sheet.core.corners.LiveTracker
 import de.schliweb.sheet.core.document.Document
 import de.schliweb.sheet.core.document.DocumentStore
+import de.schliweb.sheet.core.image.Enhance
 import de.schliweb.sheet.core.ocr.OcrEngine
 import de.schliweb.sheet.core.ocr.RecModel
 import de.schliweb.sheet.core.pdf.PdfPage
@@ -58,8 +60,9 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.max
 
-class LiveOutline(val quad: Quad, val transform: OutputTransform)
+class LiveOutline(val quad: Quad, val transform: OutputTransform, val far: Boolean = false)
 
 data class Saved(val name: String, val folder: String, val uri: Uri?)
 
@@ -76,7 +79,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private val detector by lazy { CornerDetector(modelLoader.value) }
     private val tracker = LiveTracker()
     private val ocrModels = lazy { AssetOcrModels(application) }
-    private val ocr by lazy { OcrEngine(ocrModels.value) }
+    private val ocr by lazy { OcrEngine(ocrModels.value, readers = OCR_READERS) }
     private val store = DocumentStore(File(application.filesDir, "document"))
 
     private val ocrDispatcher = Dispatchers.Default.limitedParallelism(1)
@@ -111,16 +114,21 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private val _saved = MutableStateFlow<Saved?>(null)
     val saved: StateFlow<Saved?> = _saved
 
+    private val _enhanced = MutableStateFlow(0)
+    val enhanced: StateFlow<Int> = _enhanced
+
     private val thumbnails = LruCache<String, Bitmap>(20)
 
     @Volatile private var analyzing = true
     private var lastAnalysis = 0L
 
+    private var far = false
+
     init {
         viewModelScope.launch {
             val doc = withContext(Dispatchers.IO) { store.load() }
             _document.value = doc
-            val unread = withContext(Dispatchers.IO) { doc.pages.filter { store.text(it) == null } }
+            val unread = withContext(Dispatchers.IO) { doc.pages.filter { store.text(it) == null || !store.image(it.id).exists() } }
             unread.forEach { queueOcr(it.id) }
         }
         viewModelScope.launch(ocrDispatcher) {
@@ -142,7 +150,12 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             null
         }
         val quad = tracker.update(detection, frame.bitmap.width, frame.bitmap.height, now)
-        _live.value = quad?.let { q -> LiveOutline(q.map { Point(it.x / frame.scale, it.y / frame.scale) }, transforms.getOutputTransform(image)) }
+        if (quad != null) {
+            val (pw, ph) = PageSize.of(quad, frame.bitmap.width, frame.bitmap.height)
+            val share = max(pw, ph).toDouble() / max(frame.bitmap.width, frame.bitmap.height)
+            far = if (far) share < FAR_OFF else share < FAR_ON
+        }
+        _live.value = quad?.let { q -> LiveOutline(q.map { Point(it.x / frame.scale, it.y / frame.scale) }, transforms.getOutputTransform(image), far) }
     }
 
     fun onCaptured(image: ImageProxy) {
@@ -181,7 +194,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             if (editing == null) {
                 val id = UUID.randomUUID().toString()
                 withContext(Dispatchers.Default) {
-                    writeJpeg(warp(crop.photo, crop.quad), store.image(id))
+                    writeJpeg(warp(crop.photo, crop.quad), store.plain(id), PLAIN_QUALITY)
                     writeJpeg(crop.photo, store.photo(id))
                 }
                 updateDocument { it.add(id, crop.quad) }
@@ -190,7 +203,8 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 val page = _document.value.pages.find { it.id == editing } ?: return@busyWhile
                 withContext(Dispatchers.Default) {
-                    writeJpeg(turn(warp(crop.photo, crop.quad), page.turns), store.image(editing))
+                    writeJpeg(warp(crop.photo, crop.quad), store.plain(page.id), PLAIN_QUALITY)
+                    store.image(page.id).delete()
                 }
                 updateDocument { it.recut(editing, crop.quad) }
                 queueOcr(editing)
@@ -236,11 +250,6 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun turnPage(id: String) {
         busyWhile {
-            withContext(Dispatchers.Default) {
-                val file = store.image(id)
-                val bitmap = BitmapFactory.decodeFile(file.path) ?: return@withContext
-                writeJpeg(turn(bitmap, 1), file)
-            }
             updateDocument { it.turned(id, 1) }
             queueOcr(id)
         }
@@ -332,18 +341,20 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun pdfName() = "Scan " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm", Locale.ROOT)) + ".pdf"
 
-    private fun pdfPage(page: Document.Page) = PdfPage(store.image(page.id).readBytes(), store.text(page))
+    private fun pdfPage(page: Document.Page) = PdfPage(pageImage(page.id).readBytes(), store.text(page), page.turns)
+
+    private fun pageImage(id: String): File = store.image(id).takeIf { it.exists() } ?: store.plain(id)
 
     suspend fun thumbnail(page: Document.Page): Bitmap? {
-        val key = "${page.id}:${page.revision}"
+        val file = pageImage(page.id)
+        val key = "${page.id}:${page.revision}:${file.name}"
         thumbnails.get(key)?.let { return it }
         return withContext(Dispatchers.IO) {
-            val file = store.image(page.id)
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.path, bounds)
             var sample = 1
             while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= THUMBNAIL_EDGE) sample *= 2
-            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.let { turn(it, page.turns) }
         }?.also { thumbnails.put(key, it) }
     }
 
@@ -355,8 +366,13 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun readPage(id: String) {
         try {
             var page = _document.value.pages.find { it.id == id } ?: return
+            try {
+                enhance(id)
+            } catch (e: Exception) {
+                Log.w(TAG, "enhance failed for $id", e)
+            }
             if (store.text(page) != null) return
-            var bitmap = BitmapFactory.decodeFile(store.image(id).path) ?: return
+            var bitmap = BitmapFactory.decodeFile(store.plain(id).path)?.let { turn(it, page.turns) } ?: return
             val language = RecModel.forLocale(Locale.getDefault())
             val t0 = SystemClock.uptimeMillis()
             val text = if (page.revision == 0) {
@@ -364,7 +380,6 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
                 val degrees = upright.degrees
                 if (degrees != 0) {
                     bitmap = turn(bitmap, degrees / 90)
-                    writeJpeg(bitmap, store.image(id))
                     updateDocument { it.turned(id, degrees / 90) }
                     page = _document.value.pages.find { it.id == id } ?: return
                     Log.i(TAG, "turned $id by $degrees degrees")
@@ -398,10 +413,25 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
     }
 
-    private fun writeJpeg(bitmap: Bitmap, file: File) {
+    private fun enhance(id: String) {
+        if (store.image(id).exists()) return
+        val t0 = SystemClock.uptimeMillis()
+        val page = BitmapFactory.decodeFile(store.plain(id).path, BitmapFactory.Options().apply { inMutable = true }) ?: return
+        val t1 = SystemClock.uptimeMillis()
+        val px = IntArray(page.width * page.height)
+        page.getPixels(px, 0, page.width, 0, 0, page.width, page.height)
+        Enhance.apply(px, page.width, page.height)
+        val t2 = SystemClock.uptimeMillis()
+        page.setPixels(px, 0, page.width, 0, 0, page.width, page.height)
+        writeJpeg(page, store.image(id))
+        Log.i(TAG, "enhance: ${page.width}x${page.height}, decode ${t1 - t0} ms, enhance ${t2 - t1} ms, encode ${SystemClock.uptimeMillis() - t2} ms")
+        _enhanced.update { it + 1 }
+    }
+
+    private fun writeJpeg(bitmap: Bitmap, file: File, quality: Int = JPEG_QUALITY) {
         file.parentFile?.mkdirs()
         val temp = File(file.path + ".tmp")
-        temp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+        temp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it) }
         check(temp.renameTo(file) || (file.delete() && temp.renameTo(file))) { "could not write $file" }
     }
 
@@ -427,6 +457,10 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         const val TAG = "SheetViewModel"
         const val ANALYSIS_INTERVAL_MS = 200L
         const val JPEG_QUALITY = 90
+        const val PLAIN_QUALITY = 100
+        const val OCR_READERS = 4
+        const val FAR_ON = 0.5
+        const val FAR_OFF = 0.58
         const val THUMBNAIL_EDGE = 480
     }
 }

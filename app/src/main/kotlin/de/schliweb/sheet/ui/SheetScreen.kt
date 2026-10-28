@@ -25,8 +25,6 @@ import de.schliweb.sheet.R
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,7 +60,7 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
         vm.savedShown()
     }
     val dark = isSystemInDarkTheme()
-    val darkIcons = !dark && screen != Screen.Camera
+    val darkIcons = !dark && screen == Screen.Pages
     val view = LocalView.current
     LaunchedEffect(darkIcons) {
         val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
@@ -71,15 +69,17 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
             isAppearanceLightNavigationBars = darkIcons
         }
     }
-    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
+    MaterialTheme(colorScheme = sheetColors(dark)) {
         Box(Modifier.fillMaxSize()) {
             Surface(Modifier.fillMaxSize(), color = Color.Black) {
                 when (val s = screen) {
                     Screen.Camera -> CameraScreen(vm)
                     is Screen.Crop -> {
                         BackHandler { vm.cancelCrop() }
-                        Surface(Modifier.fillMaxSize()) {
-                            CropScreen(s, busy, onMove = vm::moveCorner, onUse = vm::usePage, onRetake = vm::cancelCrop)
+                        MaterialTheme(colorScheme = sheetColors(dark = true)) {
+                            Surface(Modifier.fillMaxSize(), color = Color.Black) {
+                                CropScreen(s, busy, onMove = vm::moveCorner, onUse = vm::usePage, onRetake = vm::cancelCrop)
+                            }
                         }
                     }
                     Screen.Pages -> {
