@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.AspectRatio
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -45,7 +46,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.semantics.Role
+import de.schliweb.sheet.ui.PageOutline
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,6 +63,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import com.google.common.util.concurrent.ListenableFuture
+import de.schliweb.sheet.LiveOutline
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,16 +141,47 @@ private fun Viewfinder(vm: SheetViewModel) {
             setImageAnalysisAnalyzer(vm.analysisExecutor, vm.analyzer)
         }
     }
+    val scope = rememberCoroutineScope()
+    val steady = remember { Steady(context) }
+    var aiming by remember { mutableStateOf(false) }
     val takePicture = {
         controller.takePicture(
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: ImageProxy) = vm.onCaptured(image)
-                override fun onError(exception: ImageCaptureException) = vm.onCaptureFailed()
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    vm.onCaptured(image)
+                    aiming = false
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    vm.onCaptureFailed()
+                    aiming = false
+                }
             },
         )
     }
-    LaunchedEffect(vm) { vm.shutter.collect { takePicture() } }
+    val shoot: () -> Unit = shoot@{
+        if (aiming || busy) return@shoot
+        aiming = true
+        val (x, y) = pageCentre(live, previewView)
+        val action = FocusMeteringAction.Builder(
+            previewView.meteringPointFactory.createPoint(x, y),
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE or FocusMeteringAction.FLAG_AWB,
+        ).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+        val focus = controller.cameraControl?.startFocusAndMetering(action)
+        scope.launch {
+            coroutineScope {
+                launch { withTimeoutOrNull(FOCUS_TIMEOUT_MS) { focus?.awaitDone() } }
+                launch { steady.awaitStill(STEADY_TIMEOUT_MS) }
+            }
+            takePicture()
+        }
+    }
+    LaunchedEffect(vm) { vm.shutter.collect { shoot() } }
+    DisposableEffect(steady) {
+        steady.start()
+        onDispose { steady.stop() }
+    }
     DisposableEffect(owner) {
         controller.bindToLifecycle(owner)
         previewView.controller = controller
@@ -151,8 +200,8 @@ private fun Viewfinder(vm: SheetViewModel) {
                 for (i in 1 until 4) lineTo(pts[2 * i], pts[2 * i + 1])
                 close()
             }
-            drawPath(path, Color(0x3300C853))
-            drawPath(path, Color(0xFF00C853), style = Stroke(width = 3.dp.toPx()))
+            drawPath(path, PageOutline.copy(alpha = 0.2f))
+            drawPath(path, PageOutline, style = Stroke(width = 3.dp.toPx()))
         }
         val landscape = isLandscape()
         val controls = if (landscape) {
@@ -165,18 +214,59 @@ private fun Viewfinder(vm: SheetViewModel) {
                 val place = if (landscape) Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp) else Modifier.align(Alignment.CenterStart).padding(start = 24.dp)
                 PagesButton(vm, document, place)
             }
-            Box(Modifier.align(Alignment.Center)) {
-                if (busy) {
-                    CircularProgressIndicator(Modifier.size(72.dp))
-                } else {
-                    val label = stringResource(R.string.take_photo)
-                    FilledIconButton(
-                        onClick = takePicture,
-                        shape = CircleShape,
-                        modifier = Modifier.size(72.dp).semantics { contentDescription = label },
-                    ) {}
-                }
-            }
+            Shutter(found = live != null, busy = busy || aiming, onClick = shoot, modifier = Modifier.align(Alignment.Center))
+        }
+        val hint = when {
+            aiming -> R.string.hold_still
+            live?.far == true -> R.string.move_closer
+            else -> null
+        }
+        if (hint != null) {
+            val place = if (landscape) Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 24.dp) else Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 140.dp)
+            Text(
+                stringResource(hint),
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = place.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+private fun pageCentre(live: LiveOutline?, preview: PreviewView): Pair<Float, Float> {
+    val target = preview.outputTransform
+    if (live == null || target == null) return preview.width / 2f to preview.height / 2f
+    val c = live.quad.corners
+    val pt = floatArrayOf(c.sumOf { it.x }.toFloat() / 4, c.sumOf { it.y }.toFloat() / 4)
+    CoordinateTransform(live.transform, target).mapPoints(pt)
+    return pt[0] to pt[1]
+}
+
+private suspend fun ListenableFuture<*>.awaitDone() = suspendCancellableCoroutine { c -> addListener({ c.resume(Unit) }, Runnable::run) }
+
+private const val FOCUS_TIMEOUT_MS = 1500L
+private const val STEADY_TIMEOUT_MS = 1500L
+
+@Composable
+private fun Shutter(found: Boolean, busy: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val label = stringResource(R.string.take_photo)
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val disc by animateFloatAsState(if (pressed) 0.72f else 1f, label = "disc")
+    val ring by animateColorAsState(if (found) PageOutline else Color.White, label = "ring")
+    Box(
+        modifier
+            .size(76.dp)
+            .border(4.dp, ring, CircleShape)
+            .clip(CircleShape)
+            .clickable(interactionSource = press, indication = null, enabled = !busy, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(56.dp), color = Color.White, strokeWidth = 3.dp)
+        } else {
+            Box(Modifier.size(60.dp).scale(disc).background(Color.White, CircleShape))
         }
     }
 }
@@ -185,17 +275,25 @@ private fun Viewfinder(vm: SheetViewModel) {
 private fun PagesButton(vm: SheetViewModel, document: Document, modifier: Modifier) {
     val last = document.pages.last()
     var thumb by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(last) { thumb = vm.thumbnail(last)?.asImageBitmap() }
+    val enhanced by vm.enhanced.collectAsState()
+    LaunchedEffect(last, enhanced) { thumb = vm.thumbnail(last)?.asImageBitmap() }
     val label = pluralStringResource(R.plurals.pages, document.pages.size, document.pages.size)
     Box(
         modifier
             .size(56.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.White)
             .clickable(onClickLabel = label) { vm.showPages() }
-            .semantics { contentDescription = label },
+            .semantics { contentDescription = label }
+            .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+            .padding(2.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.White),
     ) {
         thumb?.let { Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-        Badge(Modifier.align(Alignment.TopEnd).padding(2.dp)) { Text(document.pages.size.toString()) }
+        Badge(
+            Modifier.align(Alignment.TopEnd).padding(3.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+        ) { Text(document.pages.size.toString()) }
     }
 }
