@@ -13,7 +13,7 @@ PaddleOCR recognises the text on the phone, in the phone's language: Latin scrip
 Scan a page, the text is read in the background, scan the next. Reorder, turn and delete pages. The document is kept until you save it, even if the app is closed.
 
 <b>Searchable PDFs</b>
-Each page as photographed, with the text as an invisible layer you can search, select and copy, in any script. Saved to one folder you pick once (ideal for Nextcloud, Syncthing or paperless-ngx), or shared to another app.
+Each page cleaned up like a scan (white paper without shadows, crisp text), with the text as an invisible layer you can search, select and copy, in any script. Saved to one folder you pick once (ideal for Nextcloud, Syncthing or paperless-ngx), or shared to another app.
 
 <b>Open source</b>
 GPL-3.0. Everything is built from source, including the inference engine.

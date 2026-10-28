@@ -37,7 +37,7 @@ in this repository (commands in [DEVELOPMENT.md](DEVELOPMENT.md)):
 
 | | MakeACopy | Sheet |
 |---|---|---|
-| Source of the app (main, without tests) | ~90,000 lines of Java | ~4,500 lines of Kotlin |
+| Source of the app (main, without tests) | ~90,000 lines of Java | ~5,300 lines of Kotlin |
 | Native dependencies | OpenCV, Tesseract, ONNX Runtime | ONNX Runtime only, built from source |
 | OCR on a line tilted by 2° (character error rate) | 0.74 (axis-aligned boxes) | 0.01 (boxes follow the line) |
 | Multi-column reading order | an option | always on; two-column sample 0.66 → 0.00 |
@@ -54,8 +54,8 @@ What this does **not** show:
   data, and the choice of PaddleOCR, come from MakeACopy and months of
   work on it; Sheet took about two days because it could stand on them.
 - Sheet does less. MakeACopy has a document library, import of images
-  and PDFs, image filters and more OCR options; Sheet has none of these
-  yet.
+  and PDFs, image filters to choose from and more OCR options; Sheet has
+  none of these yet (it cleans every page up the same way).
 - It has been tried on one real phone (a Pixel 7a) so far, plus the
   emulator.
 
@@ -77,6 +77,9 @@ cannot see. Disclosing it, as here, is the only reliable signal.
 
 ## What it does
 
+- **Takes a sharp photo.** The shutter focuses and exposes on the page and
+  waits for still hands; "Move closer" shows while the page is too small
+  in the picture for a sharp scan.
 - **Finds the page while you aim.** A small model trained for this
   (DocQuadNet-256) outlines the page live in the camera preview, and again
   on the photo, where it also tries the photo turned when the page lies at
@@ -94,9 +97,11 @@ cannot see. Disclosing it, as here, is the only reliable signal.
 - **Page after page**: scan, the text is read in the background, scan the
   next. Reorder, turn and delete pages; the document survives the app
   being closed.
-- **Searchable PDF**: each page's photo as taken, with the text as an
-  invisible layer you can search, select and copy, in any script. Saved
-  to one folder you pick once, or shared to another app.
+- **Searchable PDF**: each page cleaned up like a scan (white paper
+  without shadows or colour cast, black, crisp text; about 0.8 MB an A4
+  page), with the text as an invisible layer you can search, select and
+  copy, in any script. The text is read from the page as photographed.
+  Saved to one folder you pick once, or shared to another app.
 
 Volume keys take the photo. Light and dark theme follow the system.
 English and German.

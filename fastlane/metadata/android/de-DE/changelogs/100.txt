@@ -1,1 +1,1 @@
-Erste Version: Seitenumriss live, Zuschnitt mit Lupe, automatisch aufgerichtete Seiten, Offline-Texterkennung in vielen Schriften, mehrseitige Dokumente, durchsuchbare PDFs zum Sichern in einen Ordner oder Teilen. Hoch- und Querformat, hell und dunkel.
+Erste Version: Seitenumriss live, scharfe Fotos (Fokus auf die Seite, ruhige Hand), Zuschnitt mit Lupe, automatisch aufgerichtete Seiten, Offline-Texterkennung in vielen Schriften, mehrseitige Dokumente, durchsuchbare PDFs aufbereitet wie gescannt, zum Sichern in einen Ordner oder Teilen. Hoch- und Querformat, hell und dunkel.

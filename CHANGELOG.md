@@ -20,13 +20,19 @@ All notable changes to this project are documented here. The format follows
   the paper's real aspect ratio. Tapping a page in the overview cuts it out
   again from its photo. On a Pixel 7a the crop screen shows about 0.2 s
   after the photo.
+- Sharp scans: the shutter focuses and exposes on the page and waits for
+  still hands ("Hold still"); "Move closer" while the page is small in the
+  picture. The PDF shows the page cleaned up like a scan (white paper
+  without shadows or colour cast, black crisp text) at about 0.8 MB per
+  A4 page; OCR reads the page as photographed.
 - Pages are set upright automatically from the direction of their text,
   in the same pass that reads it.
 - Offline OCR with PaddleOCR v5 in the phone's language (Latin, Cyrillic,
   Greek, Arabic, Devanagari, Thai and the multilingual model for Chinese
   and Japanese); tilted lines are followed, multi-column pages read
   column by column; a second pass with the multilingual model for unsure
-  Latin lines. About 3 s per page on a Pixel 7a.
+  Latin lines. On a Pixel 7a about 3 s for a card, 4.5-5 s for a full
+  A4 letter (several lines are read at once).
 - Documents of several pages, read in the background while you scan;
   reorder, turn, delete; kept on disk until saved or discarded.
 - Searchable PDF: the page photos unchanged, the text as an invisible layer
