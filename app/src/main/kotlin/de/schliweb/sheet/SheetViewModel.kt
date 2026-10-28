@@ -278,7 +278,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     fun savePdf() {
         val (tree, folderName) = _folder.value ?: return
         busyWhile {
-            reading.first { it.isEmpty() }
+            pending.first { it.isEmpty() }
             val doc = _document.value
             if (doc.isEmpty) return@busyWhile
             val name = pdfName()
@@ -308,7 +308,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sharePdf() {
         busyWhile {
-            reading.first { it.isEmpty() }
+            pending.first { it.isEmpty() }
             val doc = _document.value
             if (doc.isEmpty) return@busyWhile
             val app = getApplication<Application>()

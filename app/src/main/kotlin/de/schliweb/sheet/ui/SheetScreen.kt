@@ -83,7 +83,7 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
                         }
                     }
                     Screen.Pages -> {
-                        BackHandler { vm.backToCamera() }
+                        BackHandler { if (!busy) vm.backToCamera() }
                         Surface(Modifier.fillMaxSize()) { PagesScreen(vm) }
                     }
                 }
