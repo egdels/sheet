@@ -23,6 +23,8 @@ class DocumentStore(val dir: File) {
 
     fun image(id: String): File = File(dir, "$id.jpg")
 
+    fun plain(id: String): File = File(dir, "$id.plain.jpg")
+
     fun photo(id: String): File = File(dir, "$id.photo.jpg")
 
     fun text(page: Document.Page): OcrPage? {
@@ -36,6 +38,7 @@ class DocumentStore(val dir: File) {
 
     fun delete(id: String) {
         image(id).delete()
+        plain(id).delete()
         photo(id).delete()
         textFile(id).delete()
     }
