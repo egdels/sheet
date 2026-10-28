@@ -19,15 +19,12 @@ class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
     private val sessions = mutableMapOf<String, OrtSession>()
     private val vocabs = mutableMapOf<RecModel, Vocab>()
 
-    private fun model(name: String) = OcrModel { input ->
-        val session = sessions.getOrPut(name) {
-            val bytes = context.assets.open("$DIR/$name.ort").use { it.readBytes() }
-            env.createSession(
-                bytes,
-                OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(2)
-                },
-            )
+    private fun model(name: String, threads: Int) = OcrModel { input ->
+        val session = synchronized(sessions) {
+            sessions.getOrPut(name) {
+                val bytes = context.assets.open("$DIR/$name.ort").use { it.readBytes() }
+                env.createSession(bytes, OrtSession.SessionOptions().apply { setIntraOpNumThreads(threads) })
+            }
         }
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input.data), input.shape).use { t ->
             session.run(mapOf(session.inputNames.first() to t)).use { r ->
@@ -38,12 +35,14 @@ class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
         }
     }
 
-    override val detector: OcrModel = model("det")
+    override val detector: OcrModel = model("det", threads = 2)
 
-    override fun recognizer(model: RecModel): OcrModel = model(model.asset)
+    override fun recognizer(model: RecModel): OcrModel = model(model.asset, threads = 1)
 
-    override fun vocab(model: RecModel): Vocab = vocabs.getOrPut(model) {
-        context.assets.open("$DIR/${model.asset}_dict.txt").bufferedReader().useLines { Vocab.fromLines(it) }
+    override fun vocab(model: RecModel): Vocab = synchronized(vocabs) {
+        vocabs.getOrPut(model) {
+            context.assets.open("$DIR/${model.asset}_dict.txt").bufferedReader().useLines { Vocab.fromLines(it) }
+        }
     }
 
     override fun close() {
