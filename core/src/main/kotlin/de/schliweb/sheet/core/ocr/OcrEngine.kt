@@ -6,6 +6,11 @@ package de.schliweb.sheet.core.ocr
 import de.schliweb.sheet.core.Point
 import de.schliweb.sheet.core.Quad
 import de.schliweb.sheet.core.corners.PageImage
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -25,7 +30,25 @@ interface OcrModels {
     fun vocab(model: RecModel): Vocab
 }
 
-class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int = 1920) {
+class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int = 1920, readers: Int = 1) {
+    private val pool: ExecutorService? = if (readers > 1) {
+        Executors.newFixedThreadPool(readers) { r -> Thread(r, "ocr-reader").apply { isDaemon = true } }
+    } else {
+        null
+    }
+
+    private fun <T> inParallel(count: Int, cost: (Int) -> Double = { 0.0 }, f: (Int) -> T): List<T> {
+        val p = pool ?: return List(count, f)
+        val futures = arrayOfNulls<Future<T>>(count)
+        for (i in (0 until count).sortedByDescending(cost)) futures[i] = p.submit(Callable { f(i) })
+        return futures.map { future ->
+            try {
+                future!!.get()
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            }
+        }
+    }
 
     fun recognize(page: PageImage, language: RecModel): OcrPage = recognize(page, detect(page), language, emptyMap())
 
@@ -39,7 +62,7 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
     private class Crop(val image: PageImage, val reading: Reading)
 
     private fun recognize(page: PageImage, boxes: List<TextBox>, language: RecModel, done: Map<Int, Crop>): OcrPage {
-        val read = boxes.mapIndexed { i, box -> recognizeBox(page, box.quad, language, done[i]) }
+        val read = inParallel(boxes.size, { boxes[it].bounds.let { b -> b.width / max(1.0, b.height) } }) { i -> recognizeBox(page, boxes[i].quad, language, done[i]) }
         val bounds = boxes.map { it.bounds }
         val rtl = Bidi.isRtl(read.flatten().joinToString("") { it.text })
         val segments = ColumnLayout.segments(bounds, rtl).ifEmpty { listOf(bounds.indices.toList()) }
@@ -73,12 +96,14 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         val done = HashMap<Int, Crop>()
         var asIs = 0.0
         var flipped = 0.0
-        for (i in lines) {
-            val crop = straighten(upright, boxes[i].quad)
-            val reading = read(crop, language)
-            done[i] = Crop(crop, reading)
-            asIs += reading.decoded.confidence
-            flipped += read(crop.turned(180), language).decoded.confidence
+        val both = inParallel(lines.size) { k ->
+            val crop = straighten(upright, boxes[lines[k]].quad)
+            Triple(crop, read(crop, language), read(crop.turned(180), language))
+        }
+        for ((k, r) in both.withIndex()) {
+            done[lines[k]] = Crop(r.first, r.second)
+            asIs += r.second.decoded.confidence
+            flipped += r.third.decoded.confidence
         }
         if (flipped / lines.size <= asIs / lines.size + FLIP_MARGIN) return Oriented(turn, upright, boxes, done)
         val flippedPage = upright.turned(180)

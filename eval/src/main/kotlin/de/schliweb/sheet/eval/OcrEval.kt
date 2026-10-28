@@ -3,9 +3,11 @@
 
 package de.schliweb.sheet.eval
 
+import de.schliweb.sheet.core.image.Enhance
 import de.schliweb.sheet.core.ocr.OcrEngine
 import de.schliweb.sheet.core.ocr.RecModel
 import de.schliweb.sheet.core.ocr.turned
+import java.awt.image.BufferedImage
 import java.io.File
 import java.util.Locale
 import javax.imageio.ImageIO
@@ -17,6 +19,7 @@ object OcrEval {
         var maxSide = 1920
         var out: File? = null
         var orientation = false
+        var enhance = false
         val dirs = mutableListOf<File>()
         var i = 0
         while (i < args.size) {
@@ -25,11 +28,21 @@ object OcrEval {
                 "--max-side" -> maxSide = args[++i].toInt()
                 "--text" -> out = File(args[++i])
                 "--orientation" -> orientation = true
+                "--enhance" -> enhance = true
                 else -> dirs += File(args[i])
             }
             i++
         }
         out?.mkdirs()
+        fun load(file: File): BufferedImage {
+            val img = ImageIO.read(file)
+            if (!enhance) return img
+            val rgb = BufferedImage(img.width, img.height, BufferedImage.TYPE_INT_RGB).also { it.createGraphics().apply { drawImage(img, 0, 0, null); dispose() } }
+            val px = rgb.getRGB(0, 0, rgb.width, rgb.height, null, 0, rgb.width)
+            Enhance.apply(px, rgb.width, rgb.height)
+            rgb.setRGB(0, 0, rgb.width, rgb.height, px, 0, rgb.width)
+            return rgb
+        }
         OrtOcrModels(models).use { m ->
             val engine = OcrEngine(m, maxSide)
             if (orientation) {
@@ -51,7 +64,7 @@ object OcrEval {
                     val image = listOf("jpg", "png").map { File(dir, "$name.$it") }.firstOrNull { it.isFile } ?: continue
                     val model = modelFor(name)
                     val t0 = System.nanoTime()
-                    val page = engine.recognize(AwtPageImage(ImageIO.read(image)), model)
+                    val page = engine.recognize(AwtPageImage(load(image)), model)
                     val ms = (System.nanoTime() - t0) / 1_000_000
                     val truth = normalize(gt.readText())
                     val text = normalize(page.text)

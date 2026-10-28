@@ -20,11 +20,13 @@ class OrtOcrModels(private val dir: File) : OcrModels, AutoCloseable {
     private val vocabs = mutableMapOf<RecModel, Vocab>()
 
     private fun model(name: String) = OcrModel { input ->
-        val session = sessions.getOrPut(name) {
-            env.createSession(
-                File(dir, "$name.ort").path,
-                OrtSession.SessionOptions().apply { setIntraOpNumThreads(maxOf(2, Runtime.getRuntime().availableProcessors() / 2)) },
-            )
+        val session = synchronized(sessions) {
+            sessions.getOrPut(name) {
+                env.createSession(
+                    File(dir, "$name.ort").path,
+                    OrtSession.SessionOptions().apply { setIntraOpNumThreads(maxOf(2, Runtime.getRuntime().availableProcessors() / 2)) },
+                )
+            }
         }
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input.data), input.shape).use { t ->
             session.run(mapOf(session.inputNames.first() to t)).use { r ->
@@ -39,8 +41,8 @@ class OrtOcrModels(private val dir: File) : OcrModels, AutoCloseable {
 
     override fun recognizer(model: RecModel): OcrModel = model(model.asset)
 
-    override fun vocab(model: RecModel): Vocab = vocabs.getOrPut(model) {
-        File(dir, "${model.asset}_dict.txt").useLines { Vocab.fromLines(it) }
+    override fun vocab(model: RecModel): Vocab = synchronized(vocabs) {
+        vocabs.getOrPut(model) { File(dir, "${model.asset}_dict.txt").useLines { Vocab.fromLines(it) } }
     }
 
     override fun close() {
