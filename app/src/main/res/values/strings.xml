@@ -33,4 +33,6 @@
     <string name="cancel">Cancel</string>
     <string name="edit_corners">Edit corners</string>
     <string name="share">Share</string>
+    <string name="move_closer">Move closer</string>
+    <string name="hold_still">Hold still</string>
 </resources>

@@ -32,4 +32,6 @@
     <string name="cancel">Abbrechen</string>
     <string name="edit_corners">Ecken bearbeiten</string>
     <string name="share">Teilen</string>
+    <string name="move_closer">Näher ran</string>
+    <string name="hold_still">Ruhig halten</string>
 </resources>
