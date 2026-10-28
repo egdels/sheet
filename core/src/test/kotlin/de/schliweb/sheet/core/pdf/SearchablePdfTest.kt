@@ -12,6 +12,7 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.io.RandomAccessReadBuffer
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
+import org.apache.pdfbox.rendering.PDFRenderer
 import org.apache.pdfbox.text.PDFTextStripper
 import java.awt.Color
 import java.awt.image.BufferedImage
@@ -101,5 +102,36 @@ class SearchablePdfTest {
         assertEquals(595.28 to 841.89, SearchablePdf.paperSize(2480, 3508))
         assertEquals(841.89 to 595.28, SearchablePdf.paperSize(3508, 2480))
         assertEquals(612.0 to 792.0, SearchablePdf.paperSize(2550, 3300))
+    }
+
+    @Test
+    fun turnedPagesAreDrawnTurnedWithoutTouchingTheJpeg() {
+        val img = BufferedImage(1240, 1754, BufferedImage.TYPE_INT_RGB)
+        img.createGraphics().apply {
+            color = Color.WHITE
+            fillRect(0, 0, 1240, 1754)
+            color = Color.BLACK
+            fillRect(0, 0, 310, 438)
+            dispose()
+        }
+        val jpeg = ByteArrayOutputStream().also { ImageIO.write(img, "jpg", it) }.toByteArray()
+        val out = ByteArrayOutputStream()
+        SearchablePdf.write(out, 4, { PdfPage(jpeg, null, turns = it) })
+        Loader.loadPDF(out.toByteArray()).use { doc ->
+            val renderer = PDFRenderer(doc)
+            val corners = listOf(0.1 to 0.1, 0.9 to 0.1, 0.9 to 0.9, 0.1 to 0.9)
+            for (turns in 0..3) {
+                val box = doc.getPage(turns).mediaBox
+                if (turns % 2 == 0) assertEquals(595.28f, box.width, 0.01f) else assertEquals(841.89f, box.width, 0.01f)
+                val resources = doc.getPage(turns).resources
+                val image = resources.getXObject(resources.xObjectNames.single()) as PDImageXObject
+                assertContentEquals(jpeg, image.cosObject.createRawInputStream().use { it.readBytes() })
+                val shot = renderer.renderImageWithDPI(turns, 18f)
+                for ((k, corner) in corners.withIndex()) {
+                    val rgb = shot.getRGB((corner.first * shot.width).toInt(), (corner.second * shot.height).toInt()) and 0xFF
+                    if (k == turns) assertTrue(rgb < 64, "turns $turns: block not at corner $k ($rgb)") else assertTrue(rgb > 192, "turns $turns: corner $k is dark ($rgb)")
+                }
+            }
+        }
     }
 }

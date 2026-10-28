@@ -12,7 +12,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-class PdfPage(val jpeg: ByteArray, val text: OcrPage?)
+class PdfPage(val jpeg: ByteArray, val text: OcrPage?, val turns: Int = 0)
 
 object SearchablePdf {
     private val PAPERS = listOf(595.28 to 841.89, 612.0 to 792.0)
@@ -34,10 +34,11 @@ object SearchablePdf {
         for (i in 0 until pageCount) {
             val page = pages(i)
             val (pw, ph) = Jpeg.size(page.jpeg)
-            val (width, height) = paperSize(pw, ph)
+            val sideways = page.turns.mod(2) == 1
+            val (width, height) = if (sideways) paperSize(ph, pw) else paperSize(pw, ph)
             val n = firstPage + 3 * i
             w.obj(n, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(width)} ${num(height)}] /Resources << /XObject << /Im0 ${n + 2} 0 R >> /Font << /F1 3 0 R >> >> /Contents ${n + 1} 0 R >>")
-            w.stream(n + 1, "", content(page.text, width, height).toByteArray(Charsets.US_ASCII))
+            w.stream(n + 1, "", content(page.text, page.turns, width, height).toByteArray(Charsets.US_ASCII))
             w.stream(n + 2, "/Type /XObject /Subtype /Image /Width $pw /Height $ph /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", page.jpeg)
         }
         w.finish(rootObj = 1, infoObj = 8)
@@ -54,9 +55,16 @@ object SearchablePdf {
         return if (landscape) long to short else short to long
     }
 
-    private fun content(text: OcrPage?, width: Double, height: Double): String {
+    internal fun imageMatrix(turns: Int, width: Double, height: Double): DoubleArray = when (turns.mod(4)) {
+        0 -> doubleArrayOf(width, 0.0, 0.0, height, 0.0, 0.0)
+        1 -> doubleArrayOf(0.0, -height, width, 0.0, 0.0, height)
+        2 -> doubleArrayOf(-width, 0.0, 0.0, -height, width, height)
+        else -> doubleArrayOf(0.0, height, -width, 0.0, width, 0.0)
+    }
+
+    private fun content(text: OcrPage?, turns: Int, width: Double, height: Double): String {
         val s = StringBuilder()
-        s.append("q ${num(width)} 0 0 ${num(height)} 0 0 cm /Im0 Do Q\n")
+        s.append("q ${imageMatrix(turns, width, height).joinToString(" ") { num(it) }} cm /Im0 Do Q\n")
         if (text == null || text.words.isEmpty()) return s.toString()
         val sx = width / text.width
         val sy = height / text.height
