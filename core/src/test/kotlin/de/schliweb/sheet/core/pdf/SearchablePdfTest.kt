@@ -93,6 +93,25 @@ class SearchablePdfTest {
     }
 
     @Test
+    fun mixedLineInReadingOrder() {
+        val line = OcrLine(
+            listOf(word("Hello", 100.0, 100.0, 300.0, 140.0), word("World", 320.0, 100.0, 520.0, 140.0), word("بالعالم", 560.0, 100.0, 800.0, 140.0), word("أهلا", 820.0, 100.0, 1000.0, 140.0)),
+            rtl = true,
+        )
+        val out = ByteArrayOutputStream()
+        SearchablePdf.write(out, 1, { PdfPage(jpeg(1240, 1754), OcrPage(1240, 1754, listOf(line))) })
+        Loader.loadPDF(out.toByteArray()).use { doc ->
+            val shown = mutableListOf<String>()
+            object : PDFTextStripper() {
+                override fun processTextPosition(text: org.apache.pdfbox.text.TextPosition) {
+                    shown += text.unicode
+                }
+            }.getText(doc)
+            assertEquals("أهلا بالعالم Hello World", shown.joinToString(""))
+        }
+    }
+
+    @Test
     fun jpegSizeFromHeader() {
         assertEquals(321 to 123, Jpeg.size(jpeg(321, 123)))
     }

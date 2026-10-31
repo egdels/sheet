@@ -70,14 +70,15 @@ object SearchablePdf {
         val sy = height / text.height
         s.append("BT 3 Tr\n")
         for (line in text.lines) {
-            for ((k, word) in line.words.withIndex()) {
+            val words = line.inReadingOrder
+            for ((k, word) in words.withIndex()) {
                 val chars = word.text.length
                 if (chars == 0) continue
                 val b = word.box
                 val size = max(1.0, b.height * sy)
                 val boxWidth = max(0.1, b.width * sx)
                 val scale = 100.0 * boxWidth / (chars * size * GlyphlessFont.ADVANCE / 1000.0)
-                val shown = if (k < line.words.size - 1) word.text + " " else word.text
+                val shown = if (k < words.size - 1) word.text + " " else word.text
                 s.append("/F1 ${num(size)} Tf ${num(scale)} Tz 1 0 0 1 ${num(b.left * sx)} ${num(height - b.bottom * sy)} Tm <")
                 for (c in shown) s.append(String.format(Locale.ROOT, "%04X", c.code))
                 s.append("> Tj\n")
