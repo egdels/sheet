@@ -5,11 +5,13 @@
 
 package de.schliweb.sheet
 
+import android.app.ActivityManager
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.os.LocaleList
 import android.os.SystemClock
 import android.util.Log
 import android.util.LruCache
@@ -41,6 +43,7 @@ import de.schliweb.sheet.export.SaveFolder
 import de.schliweb.sheet.ocr.AssetOcrModels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -78,7 +82,10 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private val modelLoader = lazy { OrtDocQuadModel(application) }
     private val detector by lazy { CornerDetector(modelLoader.value) }
     private val tracker = LiveTracker()
-    private val ocrModels = lazy { AssetOcrModels(application) }
+    private val ocrModels = lazy {
+        val memory = ActivityManager.MemoryInfo().also { application.getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
+        AssetOcrModels(application, arena = memory.totalMem >= ARENA_FROM_BYTES)
+    }
     private val ocr by lazy { OcrEngine(ocrModels.value, readers = OCR_READERS) }
     private val store = DocumentStore(File(application.filesDir, "document"))
 
@@ -132,7 +139,10 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             unread.forEach { queueOcr(it.id) }
         }
         viewModelScope.launch(ocrDispatcher) {
-            for (id in ocrQueue) readPage(id)
+            for (id in ocrQueue) {
+                readPage(id)
+                if (pending.value.isEmpty()) releaseLater(RELEASE_AFTER_MS)
+            }
         }
     }
 
@@ -359,8 +369,26 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun queueOcr(id: String) {
+        release?.cancel()
         pending.update { it + (id to (it[id] ?: 0) + 1) }
         ocrQueue.trySend(id)
+    }
+
+    @Volatile private var release: Job? = null
+
+    private fun releaseLater(delayMs: Long) {
+        release?.cancel()
+        release = viewModelScope.launch(ocrDispatcher) {
+            delay(delayMs)
+            if (pending.value.isEmpty() && ocrModels.isInitialized()) {
+                ocrModels.value.release()
+                Log.i(TAG, "ocr models released")
+            }
+        }
+    }
+
+    fun onTrimMemory() {
+        if (pending.value.isEmpty()) releaseLater(0)
     }
 
     private suspend fun readPage(id: String) {
@@ -373,10 +401,11 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (store.text(page) != null) return
             var bitmap = BitmapFactory.decodeFile(store.plain(id).path)?.let { turn(it, page.turns) } ?: return
-            val language = RecModel.forLocale(Locale.getDefault())
+            val locales = LocaleList.getDefault()
+            val languages = RecModel.forLocales(List(locales.size()) { locales[it] })
             val t0 = SystemClock.uptimeMillis()
             val text = if (page.revision == 0) {
-                val upright = ocr.recognizeUpright(BitmapPageImage(bitmap), language)
+                val upright = ocr.recognizeUpright(BitmapPageImage(bitmap), languages)
                 val degrees = upright.degrees
                 if (degrees != 0) {
                     bitmap = turn(bitmap, degrees / 90)
@@ -386,7 +415,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 upright.text
             } else {
-                ocr.recognize(BitmapPageImage(bitmap), language)
+                ocr.recognize(BitmapPageImage(bitmap), languages).text
             }
             Log.i(TAG, "ocr: ${bitmap.width}x${bitmap.height}, ${text.words.size} words, ${SystemClock.uptimeMillis() - t0} ms")
             val now = _document.value.pages.find { it.id == id }
@@ -459,6 +488,8 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         const val JPEG_QUALITY = 90
         const val PLAIN_QUALITY = 100
         const val OCR_READERS = 4
+        const val ARENA_FROM_BYTES = 6L * 1024 * 1024 * 1024
+        const val RELEASE_AFTER_MS = 30_000L
         const val FAR_ON = 0.5
         const val FAR_OFF = 0.58
         const val THUMBNAIL_EDGE = 480
