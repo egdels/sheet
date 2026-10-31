@@ -14,7 +14,7 @@ import de.schliweb.sheet.core.ocr.Tensor
 import de.schliweb.sheet.core.ocr.Vocab
 import java.nio.FloatBuffer
 
-class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
+class AssetOcrModels(private val context: Context, private val arena: Boolean = true) : OcrModels, AutoCloseable {
     private val env = OrtEnvironment.getEnvironment()
     private val sessions = mutableMapOf<String, OrtSession>()
     private val vocabs = mutableMapOf<RecModel, Vocab>()
@@ -23,7 +23,13 @@ class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
         val session = synchronized(sessions) {
             sessions.getOrPut(name) {
                 val bytes = context.assets.open("$DIR/$name.ort").use { it.readBytes() }
-                env.createSession(bytes, OrtSession.SessionOptions().apply { setIntraOpNumThreads(threads) })
+                env.createSession(bytes, OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(threads)
+                    if (!arena) {
+                        setCPUArenaAllocator(false)
+                        setMemoryPatternOptimization(false)
+                    }
+                })
             }
         }
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input.data), input.shape).use { t ->
@@ -45,10 +51,12 @@ class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
         }
     }
 
-    override fun close() {
+    fun release() = synchronized(sessions) {
         sessions.values.forEach { it.close() }
         sessions.clear()
     }
+
+    override fun close() = release()
 
     private companion object {
         const val DIR = "paddleocr"
