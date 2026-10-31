@@ -20,6 +20,10 @@ object OcrEval {
         var out: File? = null
         var orientation = false
         var enhance = false
+        var upright = false
+        var locales: List<RecModel>? = null
+        var probe = true
+        var v6 = true
         val dirs = mutableListOf<File>()
         var i = 0
         while (i < args.size) {
@@ -29,6 +33,13 @@ object OcrEval {
                 "--text" -> out = File(args[++i])
                 "--orientation" -> orientation = true
                 "--enhance" -> enhance = true
+                "--upright" -> upright = true
+                "--locale" -> {
+                    locales = RecModel.forLocales(args[++i].split(',').map { Locale.forLanguageTag(it) })
+                    upright = true
+                }
+                "--no-probe" -> probe = false
+                "--no-v6" -> v6 = false
                 else -> dirs += File(args[i])
             }
             i++
@@ -44,27 +55,33 @@ object OcrEval {
             return rgb
         }
         OrtOcrModels(models).use { m ->
-            val engine = OcrEngine(m, maxSide)
+            val engine = OcrEngine(m, maxSide, probeScripts = probe, withV6 = v6)
             if (orientation) {
-                orientations(engine, dirs)
+                orientations(engine, dirs, locales)
                 return
             }
-            println("detection max side $maxSide\n")
+            println("detection max side $maxSide" + (locales?.let { ", device languages $it" } ?: "") + (if (upright) ", upright" else "") + (if (probe) "" else ", no probe") + "\n")
             for (dir in dirs) {
                 println("## ${dir.name}\n")
-                println("| sample | model | CER | WER | lines found | words | ms |")
-                println("|---|---|---|---|---|---|---|")
+                println("| sample | model | CER | WER | lines found | words found | words | ms |")
+                println("|---|---|---|---|---|---|---|---|")
                 var cerSum = 0.0
                 var werSum = 0.0
                 var n = 0
                 var found = 0
                 var total = 0
+                var wordsFound = 0
+                var wordsTotal = 0
                 for (gt in dir.listFiles { f -> f.name.endsWith(".gt.txt") }.orEmpty().sortedBy { it.name }) {
                     val name = gt.name.removeSuffix(".gt.txt")
                     val image = listOf("jpg", "png").map { File(dir, "$name.$it") }.firstOrNull { it.isFile } ?: continue
-                    val model = modelFor(name)
                     val t0 = System.nanoTime()
-                    val page = engine.recognize(AwtPageImage(load(image)), model)
+                    var model = modelFor(name)
+                    val page = if (upright) {
+                        engine.recognizeUpright(AwtPageImage(load(image)), locales ?: listOf(model)).also { model = it.model }.text
+                    } else {
+                        engine.recognize(AwtPageImage(load(image)), model)
+                    }
                     val ms = (System.nanoTime() - t0) / 1_000_000
                     val truth = normalize(gt.readText())
                     val text = normalize(page.text)
@@ -77,16 +94,20 @@ object OcrEval {
                     werSum += wer
                     found += hits
                     total += lines.size
+                    val words = wordsFound(truth, text)
+                    wordsFound += words
+                    val truthWords = truth.split(Regex("\\s+")).count { it.isNotEmpty() }
+                    wordsTotal += truthWords
                     n++
-                    println(String.format(Locale.ROOT, "| %s | %s | %.3f | %.3f | %d/%d | %d | %d |", name, model.name.lowercase(), cer, wer, hits, lines.size, page.words.size, ms))
+                    println(String.format(Locale.ROOT, "| %s | %s | %.3f | %.3f | %d/%d | %d/%d | %d | %d |", name, model.name.lowercase(), cer, wer, hits, lines.size, words, truthWords, page.words.size, ms))
                 }
-                if (n > 0) println(String.format(Locale.ROOT, "| **mean** | | **%.3f** | **%.3f** | %d/%d | | |", cerSum / n, werSum / n, found, total))
+                if (n > 0) println(String.format(Locale.ROOT, "| **mean** | | **%.3f** | **%.3f** | %d/%d | %d/%d | | |", cerSum / n, werSum / n, found, total, wordsFound, wordsTotal))
                 println()
             }
         }
     }
 
-    private fun orientations(engine: OcrEngine, dirs: List<File>) {
+    private fun orientations(engine: OcrEngine, dirs: List<File>, locales: List<RecModel>?) {
         println("| sample | 0 | 90 | 180 | 270 | ms |")
         println("|---|---|---|---|---|---|")
         val right = IntArray(4)
@@ -98,7 +119,7 @@ object OcrEval {
                 val page = AwtPageImage(ImageIO.read(image))
                 val model = modelFor(name)
                 val t0 = System.nanoTime()
-                val answers = (0 until 4).map { k -> engine.orientation(page.turned(90 * k), model) }
+                val answers = (0 until 4).map { k -> engine.orientation(page.turned(90 * k), locales ?: listOf(model)) }
                 val ms = (System.nanoTime() - t0) / 1_000_000 / 4
                 val marks = answers.mapIndexed { k, a ->
                     val ok = (90 * k + a) % 360 == 0
@@ -113,13 +134,15 @@ object OcrEval {
     }
 
     private val TESSERACT = mapOf(
-        "eng" to RecModel.EN, "ara" to RecModel.ARABIC, "fas" to RecModel.ARABIC, "el" to RecModel.GREEK,
-        "hin" to RecModel.DEVANAGARI, "rus" to RecModel.ESLAV, "tha" to RecModel.THAI,
-        "chi_sim" to RecModel.MULTI, "chi_tra" to RecModel.MULTI, "jpn" to RecModel.MULTI,
+        "ara" to RecModel.ARABIC, "fas" to RecModel.ARABIC, "el" to RecModel.GREEK,
+        "hin" to RecModel.DEVANAGARI, "rus" to RecModel.ESLAV, "ukr" to RecModel.ESLAV, "bul" to RecModel.CYRILLIC, "tha" to RecModel.THAI,
+        "kor" to RecModel.KOREAN, "chi_sim" to RecModel.MULTI, "chi_tra" to RecModel.MULTI, "jpn" to RecModel.MULTI,
     )
 
     private fun modelFor(name: String): RecModel = when {
-        name.startsWith("language_") -> TESSERACT[name.removePrefix("language_")] ?: RecModel.LATIN
+        name.startsWith("language_") -> name.removePrefix("language_").let { code ->
+            TESSERACT.entries.firstOrNull { code == it.key || code.startsWith(it.key + "_") }?.value ?: RecModel.LATIN
+        }
         "jpn" in name -> RecModel.MULTI
         else -> RecModel.LATIN
     }
@@ -133,6 +156,15 @@ object OcrEval {
         val b = text.codePoints().toArray()
         if (a.isEmpty()) return if (b.isEmpty()) 0.0 else 1.0
         return levenshtein(a.size, b.size) { i, j -> a[i] == b[j] }.toDouble() / a.size
+    }
+
+    fun wordsFound(truth: String, text: String): Int {
+        val have = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.groupingBy { it }.eachCount().toMutableMap()
+        return truth.split(Regex("\\s+")).filter { it.isNotEmpty() }.count { w ->
+            val left = have[w] ?: 0
+            if (left > 0) have[w] = left - 1
+            left > 0
+        }
     }
 
     fun wer(truth: String, text: String): Double {
