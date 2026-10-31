@@ -44,11 +44,23 @@ PATH=<venv with flatbuffers>/bin:$PATH ABIS="arm64-v8a x86_64" scripts/build_onn
 ./gradlew :eval:run --args="<data>/own_tilt_eval_holdout <data>/own_tilt_eval_tune"
                                  # corner pipeline vs. labels on the Mac, ~40 s for 370 photos;
                                  # --samples <out.tsv> per photo, --model <file.ort> for a candidate model
-E=../makeacopy-github/app/src/androidTestPaddle/assets
-./gradlew :eval:run --args="ocr $E/eval $E/synth $E/eval/jpn"   # OCR vs ground truth (CER, WER,
-                                 # lines found), ~20 s; --text <dir> writes each result, --max-side <px>
+E=../makeacopy-github/app/src/androidTest/assets
+./gradlew :eval:run --args="ocr $E/eval $E/synth $E/eval/jpn eval/samples"   # OCR vs ground truth (CER, WER,
+                                 # lines found, words found in any order), ~1 min; --text <dir> writes each
+                                 # result, --max-side <px>
 ./gradlew :eval:run --args="ocr --orientation $E/eval $E/synth $E/eval/jpn"   # every sample turned four
-                                 # ways: does OcrEngine.orientation set it upright? (179/188)
+                                 # ways: does OcrEngine.orientation set it upright? (188/196 with eval/samples;
+                                 # --locale <tag> as the app decides with the device in that language)
+./gradlew :eval:run --args="ocr --locale de $E/eval $E/synth $E/eval/jpn"   # as the app reads (set
+                                 # upright, script chosen) with the device in German; --upright with the
+                                 # sample's own language, --no-probe without the choice, --no-v6 with
+                                 # the v5 models alone
+scripts/synth_samples.py <fonts> eval/samples   # 23 languages, scan + photo each, from Sheet's own text
+                                 # in Noto fonts (OFL, not in the repository; see the script); pillow+raqm
+scripts/cord_samples.py <data>/CORD/test <out>  # CORD's receipt photos (CC BY 4.0, not in the repository:
+                                 # 142 MB, and receipts) cut out along their outline, text as ground truth
+scripts/paddle_v6_rec.py <download> app/src/main/assets/paddleocr   # PP-OCRv6 small's recogniser from its
+                                 # Hugging Face release (onnxruntime 1.24, pyyaml)
 ./gradlew :app:connectedDebugAndroidTest   # OCR on the device/emulator: clean_scan, CER must stay < 0.03
 scripts/icon.py                  # icon PNGs (fastlane 512, Packaging/AppIcon-256.png) from the vector's geometry
 ./gradlew :app:assembleDebug     # -> app/build/outputs/apk/debug/app-debug.apk
@@ -62,7 +74,14 @@ adb push <signed.apk> /data/local/tmp/s.apk && adb shell pm install -r /data/loc
                                  # (dumpsys package dexopt: oat/arm64/base.odex, reason=install).
                                  # Android 17 on the Pixel 7a has the JIT off; after `adb install`
                                  # the app stays interpreted (run-from-apk), and `pm compile` writes
-                                 # to dalvik-cache, which apps may not execute: Enhance 1.8 s vs 0.09 s
+                                 # to dalvik-cache, which apps may not execute: Enhance 1.8 s vs 0.09 s.
+                                 # app_process with CLASSPATH=<installed base.apk> runs a main class kept
+                                 # in it compiled only if its class loader context matches: drop the
+                                 # optional androidx.window uses-library (tools:node="remove") for such a
+                                 # build, else only the .vdex is mapped (check /proc/<pid>/maps). Give it
+                                 # another applicationId to install beside the real one, ORT's .so files
+                                 # in LD_LIBRARY_PATH. Watch `dumpsys thermalservice`: warm, the same page
+                                 # took 5 s or 12 s; compare variants page by page in one process.
 ~/Library/Android/sdk/emulator/emulator -avd Pixel_9a &   # arm64-v8a, 16 KB pages
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n de.schliweb.sheet/.MainActivity
@@ -182,16 +201,85 @@ changes with the eval, absolute numbers for hard photos come from a device.
   the bar beside the 4:3 preview, the crop buttons stacked (main one on
   top), the overview's folder and buttons in a 260 dp panel, page tiles
   sized so that a whole one fits the height.
-- **OCR** (PaddleOCR v5, `core.ocr`): the device language picks the
-  recogniser (`RecModel.forLocale`, unknown languages read with the
-  multilingual one); no language setting. Detection always at 1920 px
-  (MakeACopy's "best quality" option; 1536 lost small_text 0.025 -> 0.076)
-  and the multilingual second pass for unsure Latin lines (also measured).
+- **OCR** (PaddleOCR v5 and v6, `core.ocr`): no language setting; the page's
+  script picks the recogniser. The models are per script (one LATIN for
+  all Latin languages), so only a change of script matters. Candidates are
+  the device's languages in order (`RecModel.forLocales`, unknown ones
+  read with the multilingual model); the first reads the longest lines,
+  in the pass that sets the page upright. Sure of them (>= 0.93): done, at
+  no cost. Else every script model reads them and the one surer by 0.1
+  reads the page. A page read as mostly Latin letters by another script's
+  model goes to LATIN: they all know the English alphabet and are sure
+  of a Latin page, but lose its accents. Eval (`--locale`, 47 + 9 + 2
+  samples), mean CER on the main set with the device in de / ru / ar / ja /
+  el: 0.012-0.013 with the choice, as with the right language set (0.013);
+  without it 0.18-0.23. First model's confidence on the eval: Latin pages
+  0.976-1.000, Greek read by LATIN 0.866, other scripts <= 0.64. English
+  reads with LATIN; PaddleOCR's English model (not shipped, -8 MB) was as
+  good on English pages (0.188 vs 0.178 summed over ten) but lost the
+  accents of other Latin languages (ces 0.163, main set 0.052 with the
+  device in English, now 0.012).
+  Cyrillic and Greek share letter shapes with Latin: LATIN was sure
+  (0.90-0.97) of Russian, Ukrainian and Bulgarian pages set in a modern
+  sans and read them as Latin (CER 0.79-0.83 with the device in German).
+  So when LATIN wins, ESLAV, CYRILLIC and GREEK read the lines once
+  upright; one that reads its own letters (not mostly Latin) and surer
+  takes the page (0.98-0.99 vs 0.90-0.97; on Latin pages they all read
+  Latin letters). Now 0.000-0.004 there.
+  Korean has its own model (PP-OCRv5's multilingual one knows 2 of the
+  11,172 Hangul syllables: CER 0.76-0.88, no line found); APK +13.5 MB.
+  Probing only on foreign pages: ~2.5 s more on the Mac with one reader;
+  every recogniser it loads stays loaded. Detection always at 1920 px
+  (MakeACopy's "best quality" option; 1536 lost small_text 0.025 -> 0.076).
+  **PP-OCRv6 small** (2026-06, Latin + Chinese + Japanese in one model,
+  `RecModel.V6`) reads the pages LATIN or MULTI is judged to fit; the
+  script's v5 model reads the lines with anything beyond ASCII or a
+  confidence below 0.6 again, and the surer reading is kept. The two make
+  different mistakes, each sure of its own: v6 is far better on photos
+  (phone_photo 0.043 -> 0.013, uneven_light 0.026 -> 0.011, chi_tra photo
+  0.04 -> 0) but reads Slovak ŕ ľ ď ť as ř l' d' t' (0.031 -> 0.072), and
+  per page it is surer than v5 by < 0.01 either way, so choosing per page
+  was "always v6". Lines read by both: 31 % of them on the eval. The v5
+  model judges script and upside down (v6 knows no Cyrillic: a Russian
+  page turned wrong). Measured (`--no-v6` for v5 alone): main set 0.013 ->
+  0.010 (words found 1997 -> 2023 of 2072), CORD receipts 1941 -> 1963 of
+  2281 words, the synthetic samples 0.024 -> 0.023, the rest unchanged;
+  138 pages on the Mac 58.4 s -> 68.4 s (+17 %, one reader). The
+  multilingual second pass for unsure lines now only runs with --no-v6.
+  Tried and dropped: v6 medium (main set 0.009, but x3.9 the time and
+  139 MB), v6's detector (better on photos, but synth_rules_bars 0.004 ->
+  0.12-0.18 on ruled lines), the v6 reader with v5 only for unsure lines
+  (v6 is sure of its Slovak mistakes). Converted by scripts/paddle_v6_rec.py;
+  ORT needs MaxPool (opset 11) and Gelu more (ort/paddleocr_v6.config).
+  Test data beyond MakeACopy's sets: eval/samples (23 languages, scan and
+  photo, scripts/synth_samples.py) and CORD's receipts
+  (scripts/cord_samples.py, real phone photos; words found, as their CER
+  hangs on whether the price column is read beside or after the items).
+  They show what no model fixes: Vietnamese letters with two marks (ử ộ ắ)
+  are in no model's dictionary (CER 0.141, 30 of 70 words); the Arabic
+  model leaves out Western digits; it writes Persian ی ک as ي ك.
+  The Arabic model's lost digits come back from the Latin one: it reads
+  next to nothing of a whole Arabic line (digits at 0.48-0.64), so each
+  gap of 4 or more frames between the Arabic words (and at either end) is
+  cut out and read alone; a number it is sure of (>= 0.8) goes in there,
+  a full stop on its left moved behind it. Synthetic Arabic 0.130 ->
+  0.022 (scan), 0.160 -> 0.052 (photo), words found 59 -> 67 of 80.
+  Persian and Urdu pages get their letters back (LetterForms: ي ى -> ی,
+  ك -> ک, Arabic-Indic -> Persian digits) when the page shows two or more
+  letters Arabic has not (پ چ ژ گ, Urdu ٹ ڈ ڑ ں ے): synthetic Persian
+  0.146 -> 0.069 (scan) and 0.099 (photo), words found 50 -> 66 of 88,
+  Arabic pages untouched. By the page, not the device's language: with
+  that, a Persian phone wrote an Arabic page in Persian letters (0.021 ->
+  0.072). MakeACopy's four-line Persian sample has none of those letters
+  and stays as it was (0.060).
   Text boxes follow a tilted line (MakeACopy's were axis-aligned: CER 0.74
   vs 0.01 at 2 degrees of skew). Multi-column reading order always on;
   tall, narrow boxes (vertical margin notes, at most a quarter of the boxes)
   are left out of the column analysis and read last, else a note split in
   two can make a column of its own (seen in MakeACopy on an appointment card).
+  The words of a line go into the text and the PDF in reading order by
+  the bidi algorithm at word level (Bidi.wordOrder, from MakeACopy #101):
+  reversing a whole Arabic line turned "Hello World" in it around.
   Not ported: vertical CJK, low-contrast crop enhancement, MakeACopy's
   dictionary post-correction; add them when the eval shows a need.
 - **Scanning is a loop** (as in Lens): camera -> crop -> "Use page" ->
@@ -203,9 +291,27 @@ changes with the eval, absolute numbers for hard photos come from a device.
   possible (the photo is not kept).
 - **Pages are set upright automatically** in the pass that reads them
   (OcrEngine.recognizeUpright: tall line boxes = on its side, recogniser
-  confidence both ways round = upside down; for CJK only upside down; the
-  boxes and the lines read upright are used again for the text). Only a
-  new page (revision 0); a page the user turned is left alone.
+  confidence both ways round = upside down; the boxes and the lines read
+  upright are used again for the text). Only a new page (revision 0); a
+  page the user turned is left alone. Chinese and Japanese columns are
+  tall boxes too, and PP-OCRv5 reads them turned as surely as lines
+  (0.97-0.99 either way), so confidence cannot tell them apart. What can:
+  a column cut into squares and read as it stands has upright characters,
+  a line of a page on its side has them lying. Eval (MakeACopy's three
+  vertical pages; its three and eval/samples' six horizontal CJK pages on
+  their side): columns 0.72-0.91, lines on their side 0.61-0.77 (a Russian
+  page read as Chinese 0.18-0.25). From 0.8 columns, below 0.7 a page on
+  its side, between the device's first language decides (Chinese or
+  Japanese: columns). On those 12 pages x 4 with the device in Japanese
+  33 of 48 right (0.5/0.85 before: 22), in German 39 (38); every vertical
+  page upright still right, but the lowest of them (0.722) is close to
+  0.7: more vertical photos should check it. This only runs when the page turned reads as
+  Chinese or Japanese; before, the device's language alone decided, and
+  with it in Japanese no page on its side, Latin ones included, was set
+  upright (0 of 98). Now 188/196 with the device in Japanese, 194/196 in
+  German, Russian, Arabic or Korean. A vertical page is no longer turned on
+  a German phone; its text reads worse so (vertical_jpn CER 0.28 -> 0.50:
+  vertical CJK is not ported), but the page is the right way up.
 - **OCR time** (Pixel 7a, release build, one card, ~30 words): 3.0-3.2 s
   per page (detector 1.3 s, ~17 recogniser runs 1.2 s, Kotlin ~0.4 s),
   first page after start +0.6 s for loading. Was 4.9 s with a separate
@@ -229,6 +335,22 @@ changes with the eval, absolute numbers for hard photos come from a device.
   doubled letters lost in small print (cillum -> cilum, nulla -> nula):
   CTC needs the blank between them. Not worth it at ~0.4 s a page;
   quantization-aware training would be the way.
+  Real pages scanned on the Pixel 7a (2026-10-30, release build): 15-20
+  words 3.1-6.5 s (the first page with loading, a page shot sideways and
+  turned 270 degrees 6.5 s), a full landscape page of 170 words 8.9-9.7 s.
+  PP-OCRv6 on the Pixel 7a (release, compiled, 22 pages read in turn with
+  and without it in one process, device in German): +11 % in all, Latin
+  pages mostly +15-35 %, some photos faster; the readings as in the eval.
+- **OCR memory**: ORT's arena keeps each session at the most it ever
+  needed. With the detector, the reading recognisers and every model the
+  script choice tried, reading peaked at 1.7-2.5 GB on the Pixel 7a (with
+  v5 alone 2.1 GB); without arenas 0.6 GB but 32 % slower (8 pages in turn
+  in one process). Keeping the arena only where pages are read (probe
+  runs and detector without) still cost 26-34 % for 1.0-1.6 GB. So: phones
+  of 6 GB and more keep the arenas, smaller ones read without
+  (AssetOcrModels), and all sessions are closed 30 s after the queue runs
+  empty or when the system trims memory (`onTrimMemory`), so a scanner in
+  the background holds no arenas; loading them again takes about a second.
 - **A page can be cut out again**: its photo (<id>.photo.jpg), outline and
   quarter turns are kept until the document is saved; tapping the page in
   the overview opens the crop screen with them.
@@ -346,8 +468,9 @@ app/   de.schliweb.sheet: MainActivity, SheetViewModel (the only UI state:
        androidTest: OcrOnDeviceTest (needs a running emulator or device)
 eval/  JVM tool: AwtPageImage, OrtDocQuadModel (desktop ORT), QuadError
        (MakeACopy's CornerEvalMetrics: best cyclic order, polygon IoU),
-       OcrEval + OrtOcrModels (`sheet-eval ocr`)
-ort/   operator lists of the shipped models, input of the ORT build
+       OcrEval + OrtOcrModels (`sheet-eval ocr`); samples/ = synthetic OCR samples
+       (scripts/synth_samples.py)
+ort/   operator lists of the shipped models (DocQuadNet, PaddleOCR v5, v6), input of the ORT build
 res    values (English) and values-de; adaptive icon in drawable/ +
        mipmap-anydpi-v26 (monochrome layer for themed icons)
 fastlane/metadata/android/{en-US,de-DE}: title (<= 30), short (<= 80),
