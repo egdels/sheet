@@ -65,6 +65,45 @@ object Bidi {
 
     fun containsRtl(text: String): Boolean = text.codePoints().anyMatch { dirClass(it) == R }
 
+    fun wordOrder(leftToRight: List<String>, rtlBase: Boolean): List<Int> {
+        val n = leftToRight.size
+        val base = if (rtlBase) R else L
+        val strong = leftToRight.map { word -> word.codePoints().map { strongClass(it) }.filter { it != N }.findFirst().orElse(N) }
+        fun neighbour(from: Int, step: Int): Int {
+            var j = from + step
+            while (j in 0 until n) {
+                if (strong[j] != N) return strong[j]
+                j += step
+            }
+            return base
+        }
+        val resolved = IntArray(n) { i ->
+            if (strong[i] != N) return@IntArray strong[i]
+            val before = neighbour(i, -1)
+            val after = neighbour(i, 1)
+            when {
+                before == after -> before
+                before == L && leftToRight[i].any { it.isDigit() } -> L
+                else -> base
+            }
+        }
+        val runs = mutableListOf<IntRange>()
+        var start = 0
+        for (i in 1..n) {
+            if (i == n || resolved[i] != resolved[start]) {
+                runs += start until i
+                start = i
+            }
+        }
+        return (if (rtlBase) runs.asReversed() else runs).flatMap { run -> if (resolved[run.first] == R) run.reversed() else run.toList() }
+    }
+
+    private fun strongClass(cp: Int): Int = when (Character.getDirectionality(cp)) {
+        Character.DIRECTIONALITY_RIGHT_TO_LEFT, Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC -> R
+        Character.DIRECTIONALITY_LEFT_TO_RIGHT -> L
+        else -> N
+    }
+
     fun visualToLogical(visual: String, rtlBase: Boolean): String {
         if (visual.length < 2) return visual
         val cps = visual.codePoints().toArray()
