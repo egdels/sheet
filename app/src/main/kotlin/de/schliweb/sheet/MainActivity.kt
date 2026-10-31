@@ -20,6 +20,11 @@ class MainActivity : ComponentActivity() {
         setContent { SheetScreen(vm) }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        vm.onTrimMemory()
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if ((keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) && event.repeatCount == 0 && vm.onShutterKey()) return true
         return super.onKeyDown(keyCode, event)
