@@ -7,7 +7,7 @@ Ein kleines, eigens dafür trainiertes Modell umrandet die Seite live in der Vor
 Sheet ermittelt die Proportionen des Papiers aus der Perspektive, so wird eine schräg fotografierte Seite wieder A4 statt gestaucht. Seiten werden anhand der Textrichtung von selbst aufgerichtet. Ein Tipp auf eine Seite schneidet sie später neu zu.
 
 <b>Liest den Text offline</b>
-PaddleOCR erkennt den Text auf dem Telefon, in dessen Sprache: lateinische Schriften, Kyrillisch, Griechisch, Arabisch, Devanagari, Thai, Chinesisch und Japanisch. Leicht schräge Zeilen werden verfolgt, Zeitungs- und Zeitschriftenseiten Spalte für Spalte gelesen.
+PaddleOCR erkennt den Text auf dem Telefon und findet die Schrift der Seite selbst: lateinische Schriften, Kyrillisch, Griechisch, Arabisch, Devanagari, Thai, Koreanisch, Chinesisch und Japanisch. Leicht schräge Zeilen werden verfolgt, Zeitungs- und Zeitschriftenseiten Spalte für Spalte gelesen.
 
 <b>Seite für Seite</b>
 Seite scannen, der Text wird im Hintergrund gelesen, nächste Seite scannen. Seiten umsortieren, drehen und löschen. Das Dokument bleibt erhalten, bis Sie es sichern, auch wenn die App geschlossen wird.
