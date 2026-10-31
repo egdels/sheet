@@ -27,12 +27,14 @@ All notable changes to this project are documented here. The format follows
   A4 page; OCR reads the page as photographed.
 - Pages are set upright automatically from the direction of their text,
   in the same pass that reads it.
-- Offline OCR with PaddleOCR v5 in the phone's language (Latin, Cyrillic,
-  Greek, Arabic, Devanagari, Thai and the multilingual model for Chinese
-  and Japanese); tilted lines are followed, multi-column pages read
-  column by column; a second pass with the multilingual model for unsure
-  Latin lines. On a Pixel 7a about 3 s for a card, 4.5-5 s for a full
-  A4 letter (several lines are read at once).
+- Offline OCR with PaddleOCR (Latin, Cyrillic, Greek, Arabic,
+  Devanagari, Thai, Korean, Chinese and Japanese) with no language to
+  choose: the script on the page picks the model, the phone's languages
+  first. Latin, Chinese and Japanese pages are read by PP-OCRv6, lines
+  with accents or CJK also by PP-OCRv5 and the surer reading kept (much
+  better on phone photos); tilted lines are followed, multi-column pages
+  read column by column. On a Pixel 7a, before PP-OCRv6, about 3 s for a
+  card, 4.5-5 s for a full A4 letter (several lines are read at once).
 - Documents of several pages, read in the background while you scan;
   reorder, turn, delete; kept on disk until saved or discarded.
 - Searchable PDF: the page photos unchanged, the text as an invisible layer
