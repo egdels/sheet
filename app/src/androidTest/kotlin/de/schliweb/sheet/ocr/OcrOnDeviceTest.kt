@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import de.schliweb.sheet.core.ocr.OcrEngine
 import de.schliweb.sheet.core.ocr.RecModel
 import de.schliweb.sheet.corners.BitmapPageImage
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +28,22 @@ class OcrOnDeviceTest {
         val cer = levenshtein(truth, page.text.trim()).toDouble() / truth.length
         println("clean_scan: ${page.words.size} words, CER $cer")
         assertTrue("CER $cer\n${page.text}", cer < 0.03)
+    }
+
+    @Test
+    fun readsCleanScanAsTheApp() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val testAssets = instrumentation.context.assets
+        val bitmap = testAssets.open("ocr/clean_scan.jpg").use { BitmapFactory.decodeStream(it) }
+        val truth = testAssets.open("ocr/clean_scan.gt.txt").bufferedReader().readText().trim()
+        val read = AssetOcrModels(instrumentation.targetContext).use { models ->
+            OcrEngine(models, readers = 4).recognizeUpright(BitmapPageImage(bitmap), listOf(RecModel.LATIN))
+        }
+        val cer = levenshtein(truth, read.text.text.trim()).toDouble() / truth.length
+        println("clean_scan as the app: ${read.model}, ${read.text.words.size} words, CER $cer")
+        assertEquals(RecModel.V6, read.model)
+        assertEquals(0, read.degrees)
+        assertTrue("CER $cer\n${read.text.text}", cer < 0.03)
     }
 
     private fun levenshtein(a: String, b: String): Int {
