@@ -37,7 +37,9 @@ data class OcrWord(val text: String, val box: Box, val confidence: Float)
 
 @Serializable
 data class OcrLine(val words: List<OcrWord>, val rtl: Boolean) {
-    val text: String get() = (if (rtl) words.asReversed() else words).joinToString(" ") { it.text }
+    val inReadingOrder: List<OcrWord> get() = Bidi.wordOrder(words.map { it.text }, rtl).map { words[it] }
+
+    val text: String get() = inReadingOrder.joinToString(" ") { it.text }
 }
 
 @Serializable
