@@ -93,6 +93,40 @@ class LayoutPartsTest {
         assertTrue(Bidi.isRtl("ابت a"))
     }
 
+    private fun read(rtl: Boolean, vararg leftToRight: String) =
+        OcrLine(leftToRight.mapIndexed { i, w -> OcrWord(w, Box(i * 100.0, 0.0, i * 100.0 + 90, 20.0), 0.9f) }, rtl).text
+
+    @Test
+    fun latinWordsInAnArabicLineKeepTheirOrder() {
+        assertEquals("أهلا بالعالم Hello World", read(true, "Hello", "World", "بالعالم", "أهلا"))
+        assertEquals("Hello World أهلا بالعالم", read(false, "Hello", "World", "بالعالم", "أهلا"))
+    }
+
+    @Test
+    fun pureLinesKeepTheirDirection() {
+        assertEquals("مستند اختبار العربية", read(true, "العربية", "اختبار", "مستند"))
+        assertEquals("one two three", read(false, "one", "two", "three"))
+    }
+
+    @Test
+    fun numbersAndPunctuationReadWithTheirNeighbours() {
+        assertEquals("رقم 12 الصفحة", read(true, "الصفحة", "12", "رقم"))
+        assertEquals("الرقم No. 12345", read(true, "No.", "12345", "الرقم"))
+        assertEquals("Date 25/12/2025", read(false, "Date", "25/12/2025"))
+        assertEquals("الاسم John - Smith", read(true, "John", "-", "Smith", "الاسم"))
+        assertEquals(emptyList(), Bidi.wordOrder(emptyList(), true))
+        assertEquals(listOf(0), Bidi.wordOrder(listOf("x"), true))
+    }
+
+    @Test
+    fun persianLetterForms() {
+        assertEquals("روز سهشنبه ۴ مارس", LetterForms.persian("روز سهشنبه ٤ مارس"))
+        assertEquals("یک", LetterForms.persian("يك"))
+        fun page(vararg words: String) = OcrPage(100, 100, listOf(OcrLine(words.map { OcrWord(it, Box(0.0, 0.0, 10.0, 10.0), 0.9f) }, rtl = true)))
+        assertTrue(LetterForms.isPersian(page("پرسش", "چند")))
+        assertTrue(!LetterForms.isPersian(page("الصفحة", "رقم")))
+    }
+
     @Test
     fun wordGapsSplitSegments() {
         val profile = IntArray(60)
@@ -115,12 +149,15 @@ class LayoutPartsTest {
     @Test
     fun languageFromLocale() {
         assertEquals(RecModel.LATIN, RecModel.forLocale(Locale.GERMANY))
-        assertEquals(RecModel.EN, RecModel.forLocale(Locale.US))
+        assertEquals(RecModel.LATIN, RecModel.forLocale(Locale.US))
         assertEquals(RecModel.ESLAV, RecModel.forLocale(Locale.forLanguageTag("ru")))
         assertEquals(RecModel.LATIN, RecModel.forLocale(Locale.forLanguageTag("sr-Latn")))
         assertEquals(RecModel.CYRILLIC, RecModel.forLocale(Locale.forLanguageTag("sr")))
         assertEquals(RecModel.MULTI, RecModel.forLocale(Locale.JAPAN))
+        assertEquals(RecModel.KOREAN, RecModel.forLocale(Locale.KOREA))
         assertEquals(RecModel.MULTI, RecModel.forLocale(Locale.forLanguageTag("xx")))
+        assertEquals(listOf(RecModel.LATIN, RecModel.ESLAV), RecModel.forLocales(listOf(Locale.GERMANY, Locale.FRANCE, Locale.forLanguageTag("ru"))))
+        assertEquals(listOf(RecModel.LATIN), RecModel.forLocales(emptyList()))
     }
 
     @Test
