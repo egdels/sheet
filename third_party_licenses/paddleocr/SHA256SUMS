@@ -1,38 +1,21 @@
-# PaddleOCR PP-OCRv5 mobile — third-party redistribution pins (Multi-Model)
-#
-# These SHA-256 hashes pin the byte-for-byte content of the *dictionary* files
-# that are redistributed in this repository under the `paddle` build flavor at
-#
-#   app/src/paddle/assets/paddleocr/v5/
-#
-# This file is the third-party / license-side mirror of the asset-internal
-# SHA256SUMS file shipped next to the assets themselves
-# (`app/src/paddle/assets/paddleocr/v5/SHA256SUMS`). They MUST stay identical
-# for the *_dict.txt entries; the asset-internal file is the one consumed by
-# the Gradle build (`verifyPaddleAssetSha256`) and at runtime by
-# `de.schliweb.makeacopy.utils.ocr.paddle.PaddleAssets`.
-#
-# Notes
-# - Recognition models are now multi-model (8 language-group recognizers +
-#   1 detection model). The previous single-rec layout (`rec.ort` /
-#   `rec_dict.txt` / fixed V=438) has been removed and is intentionally NOT
-#   pinned here anymore.
-# - `*.ort` files are intentionally NOT pinned: they are produced by a local
-#   reduced-ORT conversion (paddle2onnx → onnxruntime basic-opt) which is not
-#   bit-for-bit reproducible across host toolchains. The build verifies their
-#   presence and non-empty size only; the dict files are the cryptographic
-#   anchor of the redistributed payload.
-# - `*.onnx` files are intermediate spike/conversion artifacts and are NEVER
-#   shipped as release assets. The Gradle task `failOnPaddleOnnxAssets` and
-#   the runtime gate `PaddleAssets.rejectOnnxAssetsOrThrow` enforce this.
-#
-# Format: `<sha256>  <filename>` — same convention as `sha256sum -c`.
-
 2a215ea5877f01b1f8c8803783cda73707222c39a84d4a6cfee9ef502c48248e  arabic_PP-OCRv5_mobile_rec_dict.txt
+17d31ec78b3dd2168c97595031fdf7adeba145c4cfa5f33278f04e8363fdea9d  arabic_PP-OCRv5_mobile_rec.ort
 5fc393a91808ca21ba2e34596b40cbf51563fc2d76195d2d70c7053af496843f  cyrillic_PP-OCRv5_mobile_rec_dict.txt
+ff497bd167e097e342c99e6a8e9e2fe212b6c2f8b1202ac53a69804972c5aa3b  cyrillic_PP-OCRv5_mobile_rec.ort
+bfb226a460dee7e50b210e20e7c51becff55798150aea45cb9d047c81bfb9c9a  det.ort
 0971b9ee81af10e7e1c61a95c3ee3e6a3d467615c73a22a372a4abdf90ffae4d  devanagari_PP-OCRv5_mobile_rec_dict.txt
-7edf5b42aa0e974c8cb8dd31799230932303479e6914b641d3e21f6225d40506  en_PP-OCRv5_mobile_rec_dict.txt
+2c85c04de0ffb08e88f503d8e2c3919c19705027975cc51f8f437a6a7d7ea82d  devanagari_PP-OCRv5_mobile_rec.ort
+e1b4d3316673fee504b971fd3887a0a97541f628c048c02e89099428d1f4ade1  el_PP-OCRv5_mobile_rec_dict.txt
+3c706f898b3923d1c866fc98d5ad2acafdbae597532246481b58ff8b5cedc0a4  el_PP-OCRv5_mobile_rec.ort
 f4a227901daa0e4557aaf0a8f2747cff5a2072e38c783ebe57d473a8ad7820de  eslav_PP-OCRv5_mobile_rec_dict.txt
+a8da54d63248ab795aa5a2d5a34408a967ee13c298cf6c2a332e0eafbb9f4f6a  eslav_PP-OCRv5_mobile_rec.ort
+bced5f0a26181e5b728e7468d4ff17459824bab39798a952932edacf9ef6533a  korean_PP-OCRv5_mobile_rec_dict.txt
+09f8873be14faaad45398c2e838a5d414b5a6e2116ce94e654e5cd30511ea4fb  korean_PP-OCRv5_mobile_rec.ort
 b95923300a0656f8169feee90143cbfcdb62d82a37b54e6b12c224c3e584916f  latin_PP-OCRv5_mobile_rec_dict.txt
+5bb93e0fef6fcde14ddadfec23ff9efbc331531ba1ae54baba85605d7794efda  latin_PP-OCRv5_mobile_rec.ort
 e5f8ca61ba03d3a247d06b013119982fa6de2bd48a846018b67bca57ffc56de1  PP-OCRv5_mobile_rec_dict.txt
+d85b9bce497233067b8cc948dc919da48546e48077519ac0dc7eb621aa218d32  PP-OCRv5_mobile_rec.ort
+d051391881962ec266c4b4ee7b6a493fa2aeabaa2cd9ee369148cf3f6980af99  PP-OCRv6_small_rec_dict.txt
+7527c97a1b15c15e9529605205228116c38273f924abe90d7ef8666b7283f045  PP-OCRv6_small_rec.ort
 ff39ea2785d67dcf5f821e7696ce528f3788fb80615a7bfff11415090b85172c  th_PP-OCRv5_mobile_rec_dict.txt
+a9631e774d63f6759736ed38e72bd5570f5560e6a1a4ad6efae47b256c48b621  th_PP-OCRv5_mobile_rec.ort
