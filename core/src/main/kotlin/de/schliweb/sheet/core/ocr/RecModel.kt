@@ -6,7 +6,6 @@ package de.schliweb.sheet.core.ocr
 import java.util.Locale
 
 enum class RecModel(val asset: String) {
-    EN("en_PP-OCRv5_mobile_rec"),
     LATIN("latin_PP-OCRv5_mobile_rec"),
     ESLAV("eslav_PP-OCRv5_mobile_rec"),
     CYRILLIC("cyrillic_PP-OCRv5_mobile_rec"),
@@ -14,16 +13,18 @@ enum class RecModel(val asset: String) {
     DEVANAGARI("devanagari_PP-OCRv5_mobile_rec"),
     THAI("th_PP-OCRv5_mobile_rec"),
     GREEK("el_PP-OCRv5_mobile_rec"),
+    KOREAN("korean_PP-OCRv5_mobile_rec"),
+
+    V6("PP-OCRv6_small_rec"),
     MULTI("PP-OCRv5_mobile_rec"),
     ;
 
-    val hasMultiFallback: Boolean get() = this == EN || this == LATIN
+    val hasMultiFallback: Boolean get() = this == LATIN
 
     companion object {
         private val BY_LANGUAGE: Map<String, RecModel> = buildMap {
-            put("en", EN)
             for (l in listOf(
-                "de", "fr", "es", "it", "pt", "nl", "da", "sv", "nb", "nn", "no", "fi", "cs", "pl", "hu", "ro",
+                "en", "de", "fr", "es", "it", "pt", "nl", "da", "sv", "nb", "nn", "no", "fi", "cs", "pl", "hu", "ro",
                 "tr", "hr", "sl", "sk", "ca", "eu", "gl", "lt", "lv", "et", "is", "ga", "cy", "mt", "af", "id",
                 "ms", "sw", "tl", "fil", "vi", "la", "bs", "sq",
             )) put(l, LATIN)
@@ -33,7 +34,8 @@ enum class RecModel(val asset: String) {
             for (l in listOf("hi", "mr", "ne", "sa")) put(l, DEVANAGARI)
             put("th", THAI)
             put("el", GREEK)
-            for (l in listOf("zh", "ja", "ko")) put(l, MULTI)
+            put("ko", KOREAN)
+            for (l in listOf("zh", "ja")) put(l, MULTI)
         }
 
         fun forLocale(locale: Locale): RecModel {
@@ -41,5 +43,7 @@ enum class RecModel(val asset: String) {
             if (language == "sr" && locale.script.equals("Latn", ignoreCase = true)) return LATIN
             return BY_LANGUAGE[language] ?: MULTI
         }
+
+        fun forLocales(locales: List<Locale>): List<RecModel> = locales.map { forLocale(it) }.distinct().ifEmpty { listOf(LATIN) }
     }
 }
