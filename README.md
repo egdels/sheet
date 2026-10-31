@@ -90,9 +90,10 @@ cannot see. Disclosing it, as here, is the only reliable signal.
   not squashed. Drag a corner under a magnifier if the outline is off;
   tap a page later to cut it out again.
 - **Sets pages upright** by itself, from the direction of their text.
-- **Reads the text offline** with PaddleOCR v5 in the phone's language:
-  Latin scripts, Cyrillic, Greek, Arabic, Devanagari, Thai, Chinese and
-  Japanese. Text lines are followed even when slightly tilted,
+- **Reads the text offline** with PaddleOCR v5 and v6 and finds the page's
+  script by itself: Latin scripts, Cyrillic, Greek, Arabic, Devanagari,
+  Thai, Korean, Chinese and Japanese. Vietnamese only in part: no
+  PaddleOCR model knows its letters with two marks (ử, ộ, ắ). Text lines are followed even when slightly tilted,
   and multi-column pages read column by column.
 - **Page after page**: scan, the text is read in the background, scan the
   next. Reorder, turn and delete pages; the document survives the app
