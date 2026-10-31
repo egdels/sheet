@@ -5,7 +5,7 @@ Sheet is GPL-3.0-or-later. It ships or builds on:
 - **ONNX Runtime** 1.24.1 (MIT), built from source from the
   `external/onnxruntime` submodule by `scripts/build_onnxruntime.sh`.
   Copyright (c) Microsoft Corporation.
-- **PaddleOCR PP-OCRv5** detection and recognition models with their
+- **PaddleOCR PP-OCRv5 and PP-OCRv6** detection and recognition models with their
   dictionaries (Apache-2.0), converted to ONNX Runtime's format, in
   `app/src/main/assets/paddleocr`. Copyright (c) PaddlePaddle Authors.
   Licence text and details in `third_party_licenses/paddleocr`.
