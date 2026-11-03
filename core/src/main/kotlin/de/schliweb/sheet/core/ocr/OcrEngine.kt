@@ -30,7 +30,7 @@ interface OcrModels {
     fun vocab(model: RecModel): Vocab
 }
 
-class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int = 1920, readers: Int = 1, private val probeScripts: Boolean = true, private val withV6: Boolean = true) {
+class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int = 1920, readers: Int = 1, private val probeScripts: Boolean = true, private val withV6: Boolean = true) : AutoCloseable {
     private val pool: ExecutorService? = if (readers > 1) {
         Executors.newFixedThreadPool(readers) { r -> Thread(r, "ocr-reader").apply { isDaemon = true } }
     } else {
@@ -50,16 +50,45 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         }
     }
 
+    override fun close() {
+        pool?.shutdown()
+    }
+
     fun recognize(page: PageImage, language: RecModel): OcrPage = recognize(page, detect(page), language, emptyMap())
 
     fun recognize(page: PageImage, languages: List<RecModel>): Read {
         val boxes = detect(page)
         val lines = longestLines(boxes)
-        val crops = inParallel(lines.size) { k -> straighten(page, boxes[lines[k]].quad) }
-        val choice = choose(crops, languages, bothWays = false)
+        val probes = inParallel(lines.size) { k -> probeCrop(straighten(page, boxes[lines[k]].quad)) }
+        val choice = choose(probes.map { it.image }, languages, bothWays = false)
         val reader = readerOf(choice.model)
-        val done = if (reader != choice.model) emptyMap() else lines.indices.associate { k -> lines[k] to Crop(crops[k], choice.asIs[k]) }
+        val done = if (reader != choice.model) emptyMap() else lines.indices.filter { probes[it].whole }.associate { k -> lines[k] to Crop(probes[k].image, choice.asIs[k]) }
         return Read(reader, recognize(page, boxes, reader, done, partnerOf(reader, choice.model)))
+    }
+
+    private class ProbeCrop(val image: PageImage, val whole: Boolean)
+
+    private fun probeCrop(crop: PageImage): ProbeCrop {
+        val scaledW = crop.width * REC_HEIGHT.toDouble() / max(1, crop.height)
+        if (scaledW <= PROBE_WIDTH) return ProbeCrop(crop, true)
+        val maxW = (crop.width * PROBE_WIDTH / scaledW).toInt().coerceIn(1, crop.width)
+        val from = maxW * 3 / 4
+        val window = crop.render(maxW - from, crop.height, doubleArrayOf(1.0, 0.0, -from.toDouble(), 0.0, 1.0, 0.0), WHITE).argb()
+        val windowW = maxW - from
+        var cut = maxW
+        var lightest = -1L
+        for (x in 0 until windowW) {
+            var ink = 0L
+            for (y in 0 until crop.height) {
+                val p = window[y * windowW + x]
+                ink += 3 * 255 - ((p shr 16) and 0xFF) - ((p shr 8) and 0xFF) - (p and 0xFF)
+            }
+            if (lightest < 0 || ink < lightest) {
+                lightest = ink
+                cut = from + x
+            }
+        }
+        return ProbeCrop(crop.render(max(1, cut), crop.height, doubleArrayOf(1.0, 0.0, 0.0, 0.0, 1.0, 0.0), WHITE), false)
     }
 
     class Read(val model: RecModel, val text: OcrPage)
@@ -125,12 +154,12 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
 
     private fun judge(upright: PageImage, boxes: List<TextBox>, languages: List<RecModel>, turn: Int): Oriented {
         val lines = longestLines(boxes)
-        val crops = inParallel(lines.size) { k -> straighten(upright, boxes[lines[k]].quad) }
-        val choice = choose(crops, languages, bothWays = lines.size >= MIN_LINES)
+        val probes = inParallel(lines.size) { k -> probeCrop(straighten(upright, boxes[lines[k]].quad)) }
+        val choice = choose(probes.map { it.image }, languages, bothWays = lines.size >= MIN_LINES)
         val flipped = choice.flipped
         val reader = readerOf(choice.model)
         if (flipped == null || mean(flipped) <= mean(choice.asIs) + FLIP_MARGIN) {
-            val done = if (reader != choice.model) emptyMap() else lines.indices.associate { k -> lines[k] to Crop(crops[k], choice.asIs[k]) }
+            val done = if (reader != choice.model) emptyMap() else lines.indices.filter { probes[it].whole }.associate { k -> lines[k] to Crop(probes[k].image, choice.asIs[k]) }
             return Oriented(turn, upright, boxes, done, reader, choice.model)
         }
         val flippedPage = upright.turned(180)
@@ -157,13 +186,22 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
     }
 
     private fun choose(crops: List<PageImage>, languages: List<RecModel>, bothWays: Boolean): Probe {
-        fun probe(model: RecModel, turned: Boolean = bothWays): Probe {
-            val r = inParallel(crops.size) { k -> read(crops[k], model) to if (turned) read(crops[k].turned(180), model) else null }
-            return Probe(model, r.map { it.first }, if (turned) r.map { it.second!! } else null)
+        fun probes(models: List<RecModel>, turned: Boolean = bothWays): List<Probe> {
+            val r = inParallel(models.size * crops.size) { i ->
+                val crop = crops[i % crops.size]
+                val model = models[i / crops.size]
+                read(crop, model) to if (turned) read(crop.turned(180), model) else null
+            }
+            return models.indices.map { m ->
+                val own = r.subList(m * crops.size, (m + 1) * crops.size)
+                Probe(models[m], own.map { it.first }, if (turned) own.map { it.second!! } else null)
+            }
         }
 
+        fun probe(model: RecModel, turned: Boolean = bothWays): Probe = probes(listOf(model), turned).single()
+
         fun lookalikes(latin: Probe): Probe {
-            val rival = LOOKALIKES.map { probe(it, turned = false) }.filter { !it.latin && it.score > latin.score }.maxByOrNull { it.score }
+            val rival = probes(LOOKALIKES, turned = false).filter { !it.latin && it.score > latin.score }.maxByOrNull { it.score }
                 ?: return latin
             return if (bothWays) probe(rival.model) else rival
         }
@@ -172,7 +210,7 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         var pick = first
         if (first.score < SURE) {
             val others = (languages + RecModel.entries).distinct() - first.model - RecModel.V6
-            val best = others.map { probe(it) }.maxBy { it.score }
+            val best = probes(others).maxBy { it.score }
             if (best.score > first.score + SWITCH_MARGIN) pick = best
         }
         if (pick.model == RecModel.LATIN) return lookalikes(pick)
@@ -197,7 +235,9 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         }
     }
 
-    private class Reading(val decoded: CtcDecoder.Decoded, val scaledWidth: Int, val paddedWidth: Int)
+    private class Reading(val decoded: CtcDecoder.Decoded, val scaledWidth: Int, val paddedWidth: Int) {
+        val sureness: Double get() = decoded.confidence * min(1.0, decoded.text.length * PROBE_PX_PER_CHAR / max(1.0, scaledWidth.toDouble()))
+    }
 
     private fun recognizeBox(page: PageImage, quad: Quad, language: RecModel, done: Crop?, partner: RecModel? = null): List<OcrWord> {
         val crop = done?.image ?: straighten(page, quad)
@@ -312,6 +352,8 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
 
     companion object {
         private const val ORIENTATION_LINES = 6
+        private const val PROBE_WIDTH = 640
+        private const val PROBE_PX_PER_CHAR = 100.0
         private const val MIN_LINES = 3
         private const val ELONGATED = 2.0
         private const val FLIP_MARGIN = 0.05
@@ -323,7 +365,7 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         private const val COLUMNS_FROM = 0.8
         private const val NOT_COLUMNS = 0.7
 
-        private fun mean(r: List<Reading>): Double = if (r.isEmpty()) 0.0 else r.sumOf { it.decoded.confidence.toDouble() } / r.size
+        private fun mean(r: List<Reading>): Double = if (r.isEmpty()) 0.0 else r.sumOf { it.sureness } / r.size
         const val RETRY_BELOW = 0.6f
         const val RETRY_ACCEPT = 0.8f
         const val REC_HEIGHT = 48
@@ -338,11 +380,17 @@ class OcrEngine(private val models: OcrModels, private val detectionMaxSide: Int
         internal fun bgrNormalized(argb: IntArray): FloatArray {
             val n = argb.size
             val out = FloatArray(3 * n)
+            val m0 = MEAN_BGR[0]
+            val m1 = MEAN_BGR[1]
+            val m2 = MEAN_BGR[2]
+            val s0 = STD_BGR[0]
+            val s1 = STD_BGR[1]
+            val s2 = STD_BGR[2]
             for (i in 0 until n) {
                 val p = argb[i]
-                out[i] = ((p and 0xFF) - MEAN_BGR[0]) / STD_BGR[0]
-                out[n + i] = (((p shr 8) and 0xFF) - MEAN_BGR[1]) / STD_BGR[1]
-                out[2 * n + i] = (((p shr 16) and 0xFF) - MEAN_BGR[2]) / STD_BGR[2]
+                out[i] = ((p and 0xFF) - m0) / s0
+                out[n + i] = (((p shr 8) and 0xFF) - m1) / s1
+                out[2 * n + i] = (((p shr 16) and 0xFF) - m2) / s2
             }
             return out
         }
