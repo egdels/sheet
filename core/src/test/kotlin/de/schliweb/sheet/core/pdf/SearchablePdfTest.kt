@@ -18,6 +18,7 @@ import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -90,6 +91,65 @@ class SearchablePdfTest {
             val hallo = starts.entries.first { it.key.startsWith("Hallo") }.value
             assertEquals(124 * 595.28f / 1240, hallo, 1f)
         }
+    }
+
+    @Test
+    fun textReadInAnotherOrientationTurnsWithThePage() {
+        for (textTurns in 0..3) {
+            val (fw, fh) = if (textTurns % 2 == 1) 1754 to 1240 else 1240 to 1754
+            val text = OcrPage(fw, fh, listOf(OcrLine(listOf(word("Corner", 0.08 * fw, 0.06 * fh, 0.08 * fw + 300, 0.06 * fh + 60)), rtl = false)))
+            for (turns in 0..3) {
+                val what = "shown turned $turns, text read turned $textTurns"
+                val out = ByteArrayOutputStream()
+                SearchablePdf.write(out, 1, { PdfPage(jpeg(1240, 1754), text, turns = turns, textTurns = textTurns) })
+                Loader.loadPDF(out.toByteArray()).use { doc ->
+                    val page = doc.getPage(0)
+                    val box = page.mediaBox
+                    val shownSideways = page.rotation % 180 != 0
+                    assertEquals(turns % 2 == 1, (box.width > box.height) != shownSideways, what)
+                    var at: Pair<Float, Float>? = null
+                    val extracted = object : PDFTextStripper() {
+                        override fun processTextPosition(t: org.apache.pdfbox.text.TextPosition) {
+                            val shownWidth = if (shownSideways) box.height else box.width
+                            val shownHeight = if (shownSideways) box.width else box.height
+                            if (at == null) at = t.x / shownWidth to t.y / shownHeight
+                            super.processTextPosition(t)
+                        }
+                    }.getText(doc)
+                    assertTrue("Corner" in extracted.replace("\n", "").replace("\r", ""), "$what: $extracted")
+                    val (x, y) = at!!
+                    val expected = when ((turns - textTurns).mod(4)) {
+                        0 -> 0.08 to 0.09
+                        1 -> 0.91 to 0.08
+                        2 -> 0.92 to 0.91
+                        else -> 0.09 to 0.92
+                    }
+                    assertTrue(abs(x - expected.first) < 0.06 && abs(y - expected.second) < 0.06, "$what: first letter at $x, $y, expected near $expected")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun charactersOutsideTheBmpKeepTheirText() {
+        val text = OcrPage(1240, 1754, listOf(OcrLine(listOf(word("a\uD840\uDC00b", 124.0, 175.0, 300.0, 215.0), word("\uD83D\uDE00", 320.0, 175.0, 440.0, 215.0)), rtl = false)))
+        val out = ByteArrayOutputStream()
+        SearchablePdf.write(out, 1, { PdfPage(jpeg(1240, 1754), text) })
+        Loader.loadPDF(out.toByteArray()).use { doc ->
+            val extracted = PDFTextStripper().getText(doc)
+            assertTrue("a\uD840\uDC00b" in extracted, extracted)
+            assertTrue("\uD83D\uDE00" in extracted, extracted)
+            assertTrue('\uFFFD' !in extracted, extracted)
+        }
+    }
+
+    @Test
+    fun emptyTextSizeWritesNoText() {
+        val text = OcrPage(0, 0, listOf(OcrLine(listOf(word("x", 0.0, 0.0, 1.0, 1.0)), rtl = false)))
+        val out = ByteArrayOutputStream()
+        SearchablePdf.write(out, 1, { PdfPage(jpeg(100, 100), text) })
+        assertTrue("NaN" !in String(out.toByteArray(), Charsets.ISO_8859_1))
+        Loader.loadPDF(out.toByteArray()).use { assertEquals(1, it.numberOfPages) }
     }
 
     @Test
