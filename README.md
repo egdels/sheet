@@ -93,7 +93,8 @@ cannot see. Disclosing it, as here, is the only reliable signal.
 - **Reads the text offline** with PaddleOCR v5 and v6 and finds the page's
   script by itself: Latin scripts, Cyrillic, Greek, Arabic, Devanagari,
   Thai, Korean, Chinese and Japanese. Vietnamese only in part: no
-  PaddleOCR model knows its letters with two marks (ử, ộ, ắ). Text lines are followed even when slightly tilted,
+  PaddleOCR model knows its letters with a hook above, a dot below or two
+  marks (ả, ạ, ộ, ắ), nor ẽ, ỳ, ỹ. Text lines are followed even when slightly tilted,
   and multi-column pages read column by column.
 - **Page after page**: scan, the text is read in the background, scan the
   next. Reorder, turn and delete pages; the document survives the app
