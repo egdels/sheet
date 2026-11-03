@@ -69,6 +69,7 @@ for abi in $abis; do
     --minimal_build extended --include_ops_by_config "$ops" \
     --skip_tests --skip_onnx_tests --skip_submodule_sync --compile_no_warning_as_error \
     --use_full_protobuf --cmake_generator Ninja --cmake_path "$cmake" \
+    --no_telemetry \
     --cmake_extra_defines \
       onnxruntime_DISABLE_ML_OPS=ON onnxruntime_DISABLE_RTTI=ON onnxruntime_DISABLE_EXCEPTIONS=ON \
       onnxruntime_DISABLE_FLOAT8_TYPES=ON onnxruntime_USE_XNNPACK=OFF onnxruntime_USE_KLEIDIAI=OFF \
@@ -96,3 +97,14 @@ mkdir -p "$repo/app/libs"
 cp -f "$jar" "$repo/app/libs/onnxruntime.jar"
 zip -q -d "$repo/app/libs/onnxruntime.jar" 'ai/onnxruntime/native/*' || true
 ls -l "$repo/app/libs/onnxruntime.jar"
+
+python3 - "$repo/app/libs/onnxruntime.stamp" "$repo"/ort/*.config <<'PY'
+import hashlib, os, sys
+h = hashlib.sha256()
+for path in sorted(sys.argv[2:], key=os.path.basename):
+    lines = [l.strip() for l in open(path, encoding="utf-8") if l.strip() and not l.strip().startswith("#")]
+    h.update(os.path.basename(path).encode() + b"\0")
+    h.update("\n".join(lines).encode() + b"\0")
+open(sys.argv[1], "w").write(h.hexdigest() + "\n")
+PY
+echo "stamp: $(cat "$repo/app/libs/onnxruntime.stamp")"
