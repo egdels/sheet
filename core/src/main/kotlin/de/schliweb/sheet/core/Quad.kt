@@ -31,6 +31,8 @@ data class Quad(val topLeft: Point, val topRight: Point, val bottomRight: Point,
         else -> throw IndexOutOfBoundsException("corner $index")
     }
 
+    fun ordered(): Quad = of(corners)
+
     fun clampedTo(width: Int, height: Int): Quad =
         map { Point(it.x.coerceIn(0.0, width.toDouble()), it.y.coerceIn(0.0, height.toDouble())) }
 
