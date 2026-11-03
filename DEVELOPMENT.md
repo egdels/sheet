@@ -33,7 +33,7 @@ Needs JDK 17+, Android SDK with platform 37 (`ANDROID_HOME` is set on this
 machine), Gradle 9.7 via the wrapper.
 
 The app links ONNX Runtime built from the `external/onnxruntime` submodule
-(v1.24.1); its outputs are not committed, so build them once (and after
+(v1.31.1, built without telemetry); its outputs are not committed, so build them once (and after
 changing `ort/*.config`) before building the app:
 
 ```sh
@@ -166,8 +166,9 @@ changes with the eval, absolute numbers for hard photos come from a device.
 - **ONNX Runtime**: `scripts/build_onnxruntime.sh`, a lean port of
   MakeACopy's F-Droid build: `--minimal_build extended` with the union of
   `ort/*.config`, CPU only, no exceptions/RTTI/ML ops, 16 KB pages, about
-  4 MB per ABI. The eval uses the desktop package from Maven Central
-  (1.31.0; 1.24.1 there lacks the macOS natives).
+  5 MB per ABI. The eval uses the desktop package of the same version
+  from Maven Central. ORT turns telemetry on by default since 1.31; the
+  script passes `--no_telemetry`.
 - **Camera**: CameraX's LifecycleCameraController, no hand-written crop
   or rotation maths: analysis frames are made upright and detected at
   <= 720 px, and the outline goes to the preview through
@@ -255,9 +256,10 @@ changes with the eval, absolute numbers for hard photos come from a device.
   photo, scripts/synth_samples.py) and CORD's receipts
   (scripts/cord_samples.py, real phone photos; words found, as their CER
   hangs on whether the price column is read beside or after the items).
-  They show what no model fixes: Vietnamese letters with two marks (ử ộ ắ)
-  are in no model's dictionary (CER 0.141, 30 of 70 words); the Arabic
-  model leaves out Western digits; it writes Persian ی ک as ي ك.
+  They show what no model fixes: Vietnamese letters with a hook above, a
+  dot below or two marks (ả ạ ộ ắ), and ẽ ỳ ỹ (44 of the 72 vowel forms), are
+  in no model's dictionary (CER 0.141, 30 of 70 words); the Arabic model
+  leaves out Western digits; it writes Persian ی ک as ي ك.
   The Arabic model's lost digits come back from the Latin one: it reads
   next to nothing of a whole Arabic line (digits at 0.48-0.64), so each
   gap of 4 or more frames between the Arabic words (and at either end) is
