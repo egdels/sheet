@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Pages whose text could not be read are marked in the overview, with
+  "Read again".
+- Deleting a page asks first.
+- Camera permission refused for good: a button opens the app's settings,
+  and the camera comes back as soon as it is granted there.
+
+### Changed
+
+- OCR about 40 % faster: on a Pixel 7a a dense A4 page (222 words) takes
+  5.9 s instead of 10.8 s, the same page photographed sideways 8.5 s
+  instead of 14.7 s. Only the start of the longest lines is read to tell
+  the script and which way up the page is.
+- Turning a page keeps its text instead of reading it again; the PDF shows
+  the page as turned and its text stays searchable.
+- The screen keeps its orientation while you aim, so turning the phone to
+  frame the page does not flip the layout.
+- The folder picker opens in the folder you last saved to.
+- Scans are left out of Android's backup and device transfer; the network
+  permission a library brought in is removed.
+- ONNX Runtime 1.31.1, built from source without telemetry.
+
+### Fixed
+
+- After Android closed the app in the background it comes back on the
+  screen you left (pages or crop, with your corners); opening it from the
+  launcher no longer starts a second copy.
+- Errors while saving or processing a page show a message instead of
+  closing the app; Back is ignored while a page is being processed.
+- A damaged document file no longer loses the pages: they are rebuilt from
+  their photos.
+- PDF text layer: characters outside the Basic Multilingual Plane (rare
+  CJK characters, emoji) are found and copied correctly.
+- Saving after the folder was deleted or access to it was revoked asks for
+  a folder again instead of failing.
+- Landscape: the buttons on the page tiles stay on screen.
+- Deleting the last page returns to the camera; files of deleted pages and
+  retaken photos are removed.
+
 ## [0.1.0]
 
 ### Added
