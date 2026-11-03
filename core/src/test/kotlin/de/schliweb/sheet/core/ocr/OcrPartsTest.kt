@@ -177,4 +177,12 @@ class LayoutPartsTest {
         assertEquals(2.0 to 1.0, (img.turned(180) as Img).marked)
         assertEquals(Triple(2, 3, 0.0 to 2.0), (img.turned(270) as Img).let { Triple(it.width, it.height, it.marked) })
     }
+
+    @Test
+    fun wordSplitNeverCutsASurrogatePair() {
+        val text = "\uD840\uDC00\uD840\uDC01\uD840\uDC02"
+        assertEquals(0..3, WordSplitter.wholeChars(text, 0..2))
+        assertEquals(4..5, WordSplitter.wholeChars(text, 3..5))
+        assertEquals(0..1, WordSplitter.wholeChars(text, 0..1))
+    }
 }
