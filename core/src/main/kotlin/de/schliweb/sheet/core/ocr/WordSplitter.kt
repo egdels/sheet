@@ -22,8 +22,8 @@ object WordSplitter {
         val trimmed = text.trim()
         if (trimmed.length < 2 || ' ' in trimmed || width < 8 || height < 4) return null
         val segments = segments(inkProfile(pixels, width, height), height) ?: return null
-        val ranges = charPositions(text, trimmed, geometry, width)?.let { assignByPosition(it, segments) }
-            ?: distribute(segments, trimmed.length)
+        val ranges = (charPositions(text, trimmed, geometry, width)?.let { assignByPosition(it, segments) }
+            ?: distribute(segments, trimmed.length)).map { wholeChars(trimmed, it) }
         val words = segments.indices.mapNotNull { i ->
             val wt = trimmed.substring(ranges[i].first, ranges[i].last + 1).takeIf { ranges[i].last >= ranges[i].first } ?: return@mapNotNull null
             val (s0, s1) = segments[i]
@@ -31,6 +31,13 @@ object WordSplitter {
             OcrWord(wt, quad.strip(s0.toDouble() / width, uEnd), confidence)
         }
         return words.takeIf { it.size >= 2 }
+    }
+
+    internal fun wholeChars(text: String, r: IntRange): IntRange {
+        fun pairAt(i: Int) = i in 1 until text.length && text[i].isLowSurrogate() && text[i - 1].isHighSurrogate()
+        val first = if (pairAt(r.first)) r.first + 1 else r.first
+        val last = if (pairAt(r.last + 1)) r.last + 1 else r.last
+        return first..last
     }
 
     internal fun inkProfile(pixels: IntArray, width: Int, height: Int): IntArray = IntArray(width) { x ->
