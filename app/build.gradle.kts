@@ -1,6 +1,8 @@
 // Copyright (C) 2026 Christian Kierdorf
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import java.security.MessageDigest
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -26,7 +28,7 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = derivedVersionCode
-        versionName = appVersion
+        versionName = appVersion + providers.environmentVariable("VERSION_NAME_SUFFIX").getOrElse("")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -63,10 +65,41 @@ android {
         resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1")
     }
 
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     lint {
         disable += setOf("UseKtx", "ObsoleteSdkInt")
     }
 }
+
+kotlin {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
+}
+
+val checkOnnxRuntime = tasks.register("checkOnnxRuntime") {
+    val configs = rootProject.layout.projectDirectory.dir("ort").asFileTree.matching { include("*.config") }
+    val stamp = layout.projectDirectory.file("libs/onnxruntime.stamp").asFile
+    inputs.files(configs)
+    doLast {
+        val digest = MessageDigest.getInstance("SHA-256")
+        for (f in configs.files.sortedBy { it.name }) {
+            digest.update(f.name.toByteArray() + 0)
+            val lines = f.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+            digest.update(lines.joinToString("\n").toByteArray() + 0)
+        }
+        val want = digest.digest().joinToString("") { "%02x".format(it) }
+        val have = stamp.takeIf { it.exists() }?.readText()?.trim()
+        if (have != want) {
+            throw GradleException("ONNX Runtime in src/main/jniLibs is not built from the current ort/*.config (stamp ${have ?: "missing"}): run scripts/build_onnxruntime.sh")
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(checkOnnxRuntime) }
 
 dependencies {
     implementation(project(":core"))
