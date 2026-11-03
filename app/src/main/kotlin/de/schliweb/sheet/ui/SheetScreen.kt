@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.core.view.WindowCompat
@@ -47,7 +48,11 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val savedText = saved?.let { s ->
-        if (s.uri != null) stringResource(R.string.saved_as, s.name, s.folder) else stringResource(R.string.save_failed, s.folder)
+        when {
+            s.uri != null -> stringResource(R.string.saved_as, s.name, s.folder)
+            s.folder.isNotEmpty() -> stringResource(R.string.save_failed, s.folder)
+            else -> stringResource(R.string.save_failed_no_folder)
+        }
     }
     val openLabel = stringResource(R.string.open)
     LaunchedEffect(saved) {
@@ -58,6 +63,10 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
             runCatching { context.startActivity(view) }
         }
         vm.savedShown()
+    }
+    val resources = LocalResources.current
+    LaunchedEffect(vm) {
+        vm.failures.collect { snackbar.showSnackbar(resources.getString(it), duration = SnackbarDuration.Long) }
     }
     val dark = isSystemInDarkTheme()
     val darkIcons = !dark && screen == Screen.Pages
@@ -75,7 +84,7 @@ fun SheetScreen(vm: SheetViewModel = viewModel()) {
                 when (val s = screen) {
                     Screen.Camera -> CameraScreen(vm)
                     is Screen.Crop -> {
-                        BackHandler { vm.cancelCrop() }
+                        BackHandler { if (!busy) vm.cancelCrop() }
                         MaterialTheme(colorScheme = sheetColors(dark = true)) {
                             Surface(Modifier.fillMaxSize(), color = Color.Black) {
                                 CropScreen(s, busy, onMove = vm::moveCorner, onUse = vm::usePage, onRetake = vm::cancelCrop)
