@@ -3,7 +3,9 @@
 
 package de.schliweb.sheet.ocr
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import de.schliweb.sheet.core.ocr.OcrEngine
@@ -44,6 +46,26 @@ class OcrOnDeviceTest {
         assertEquals(RecModel.V6, read.model)
         assertEquals(0, read.degrees)
         assertTrue("CER $cer\n${read.text.text}", cer < 0.03)
+    }
+
+    @Test
+    fun setsTurnedPagesUpright() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val testAssets = instrumentation.context.assets
+        val upright = testAssets.open("ocr/clean_scan.jpg").use { BitmapFactory.decodeStream(it) }
+        val truth = testAssets.open("ocr/clean_scan.gt.txt").bufferedReader().readText().trim()
+        AssetOcrModels(instrumentation.targetContext).use { models ->
+            val engine = OcrEngine(models, readers = 4)
+            for (quarters in 1..3) {
+                val turned = Bitmap.createBitmap(upright, 0, 0, upright.width, upright.height, Matrix().apply { postRotate(90f * quarters) }, true)
+                val read = engine.recognizeUpright(BitmapPageImage(turned), listOf(RecModel.LATIN))
+                val cer = levenshtein(truth, read.text.text.trim()).toDouble() / truth.length
+                println("clean_scan turned ${90 * quarters}: upright by ${read.degrees}, ${read.model}, CER $cer")
+                assertEquals("turned ${90 * quarters}", (360 - 90 * quarters) % 360, read.degrees)
+                assertTrue("turned ${90 * quarters}: CER $cer\n${read.text.text}", cer < 0.03)
+            }
+            engine.close()
+        }
     }
 
     private fun levenshtein(a: String, b: String): Int {
