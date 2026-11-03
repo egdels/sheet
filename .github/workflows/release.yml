@@ -64,7 +64,7 @@ jobs:
             else
               args+=(--generate-notes)
             fi
-            gh release create "$TAG" "${args[@]}"
+            gh release create "$TAG" "${args[@]}" --draft
           fi
 
   android:
@@ -118,6 +118,9 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            export VERSION_NAME_SUFFIX="-${GITHUB_REF_NAME#*-}"
+          fi
           ./gradlew :app:assembleRelease :app:bundleRelease
           APK=app/build/outputs/apk/release/app-release.apk
           if [[ ! -f "$APK" ]]; then
@@ -141,4 +144,6 @@ jobs:
       - name: Upload the APK and AAB to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "Sheet-${{ needs.create-release.outputs.version }}.apk" "Sheet-${{ needs.create-release.outputs.version }}.aab" --clobber --repo "${{ github.repository }}"
+        run: |
+          gh release upload "${{ github.ref_name }}" "Sheet-${{ needs.create-release.outputs.version }}.apk" "Sheet-${{ needs.create-release.outputs.version }}.aab" --clobber --repo "${{ github.repository }}"
+          gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
