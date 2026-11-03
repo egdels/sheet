@@ -30,12 +30,24 @@ class SaveFolder(private val context: Context) {
         prefs.edit { putString(KEY, tree.toString()) }
     }
 
+    fun forget() {
+        val old = prefs.getString(KEY, null)?.let(Uri::parse) ?: return
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { context.contentResolver.releasePersistableUriPermission(old, flags) }
+        prefs.edit { remove(KEY) }
+    }
+
     fun displayName(tree: Uri): String? = runCatching {
-        val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        documentName(DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)))
+    }.getOrNull()
+
+    fun documentName(doc: Uri): String? = runCatching {
         context.contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
     }.getOrNull()
+
+    fun exists(tree: Uri): Boolean = displayName(tree) != null
 
     fun writePdf(tree: Uri, name: String, pageCount: Int, pages: (Int) -> PdfPage): Uri {
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -51,7 +63,11 @@ class SaveFolder(private val context: Context) {
         return doc
     }
 
-    private companion object {
-        const val KEY = "saveFolder"
+    companion object {
+        private const val KEY = "saveFolder"
+
+        val DOCUMENTS: Uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents")
+
+        fun documentOf(tree: Uri): Uri? = runCatching { DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)) }.getOrNull()
     }
 }
