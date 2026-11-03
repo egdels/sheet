@@ -35,4 +35,11 @@
     <string name="share">Share</string>
     <string name="move_closer">Move closer</string>
     <string name="hold_still">Hold still</string>
+    <string name="something_failed">That did not work. Please try again.</string>
+    <string name="folder_failed">This folder cannot be used. Please pick another.</string>
+    <string name="save_failed_no_folder">Could not save the PDF</string>
+    <string name="open_settings">Open settings</string>
+    <string name="camera_blocked">Sheet needs the camera. Allow it under Permissions in the app settings.</string>
+    <string name="text_not_read">Text not read</string>
+    <string name="read_again">Read again</string>
 </resources>

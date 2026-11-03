@@ -34,4 +34,11 @@
     <string name="share">Teilen</string>
     <string name="move_closer">Näher ran</string>
     <string name="hold_still">Ruhig halten</string>
+    <string name="something_failed">Das hat nicht geklappt. Bitte noch einmal versuchen.</string>
+    <string name="folder_failed">Dieser Ordner kann nicht verwendet werden. Bitte einen anderen wählen.</string>
+    <string name="save_failed_no_folder">PDF konnte nicht gespeichert werden</string>
+    <string name="open_settings">Einstellungen öffnen</string>
+    <string name="camera_blocked">Sheet braucht die Kamera. Erlaube sie in den App-Einstellungen unter Berechtigungen.</string>
+    <string name="text_not_read">Text nicht gelesen</string>
+    <string name="read_again">Erneut lesen</string>
 </resources>
