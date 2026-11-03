@@ -70,7 +70,7 @@ fun CropScreen(
         if (busy) {
             CircularProgressIndicator()
         } else {
-            Button(onClick = onUse, enabled = crop.quad.isPlausibleIn(crop.photo.width, crop.photo.height), modifier = modifier) {
+            Button(onClick = onUse, enabled = crop.quad.ordered().isPlausibleIn(crop.photo.width, crop.photo.height), modifier = modifier) {
                 Text(stringResource(R.string.use_page))
             }
         }
