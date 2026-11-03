@@ -21,6 +21,7 @@ import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.camera.view.transform.OutputTransform
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import de.schliweb.sheet.camera.toUpright
 import de.schliweb.sheet.core.PageSize
@@ -41,13 +42,17 @@ import de.schliweb.sheet.corners.OrtDocQuadModel
 import de.schliweb.sheet.crop.warp
 import de.schliweb.sheet.export.SaveFolder
 import de.schliweb.sheet.ocr.AssetOcrModels
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -56,6 +61,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDateTime
@@ -73,12 +80,12 @@ data class Saved(val name: String, val folder: String, val uri: Uri?)
 sealed interface Screen {
     data object Camera : Screen
 
-    data class Crop(val photo: Bitmap, val quad: Quad, val found: Boolean, val editing: String? = null) : Screen
+    data class Crop(val photo: Bitmap, val quad: Quad, val found: Boolean, val editing: String? = null, val id: String = editing ?: "") : Screen
 
     data object Pages : Screen
 }
 
-class SheetViewModel(application: Application) : AndroidViewModel(application) {
+class SheetViewModel(application: Application, private val state: SavedStateHandle) : AndroidViewModel(application) {
     private val modelLoader = lazy { OrtDocQuadModel(application) }
     private val detector by lazy { CornerDetector(modelLoader.value) }
     private val tracker = LiveTracker()
@@ -86,7 +93,8 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         val memory = ActivityManager.MemoryInfo().also { application.getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
         AssetOcrModels(application, arena = memory.totalMem >= ARENA_FROM_BYTES)
     }
-    private val ocr by lazy { OcrEngine(ocrModels.value, readers = OCR_READERS) }
+    private val ocrLoader = lazy { OcrEngine(ocrModels.value, readers = OCR_READERS) }
+    private val ocr by ocrLoader
     private val store = DocumentStore(File(application.filesDir, "document"))
 
     private val ocrDispatcher = Dispatchers.Default.limitedParallelism(1)
@@ -110,13 +118,26 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private val _document = MutableStateFlow(Document())
     val document: StateFlow<Document> = _document
 
+    private val _unread = MutableStateFlow<Set<String>>(emptySet())
+    val unread: StateFlow<Set<String>> = _unread
+
+    @Volatile private var photoWrite: Job? = null
+    @Volatile private var capturing: String? = null
+
     private val pending = MutableStateFlow<Map<String, Int>>(emptyMap())
     val reading: StateFlow<Set<String>> = pending.map { it.keys }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     private val saveFolder = SaveFolder(application)
 
-    private val _folder = MutableStateFlow(saveFolder.uri?.let { it to (saveFolder.displayName(it) ?: "") })
+    private val _folder = MutableStateFlow(saveFolder.uri?.let { it to "" })
     val folder: StateFlow<Pair<Uri, String>?> = _folder
+
+    private val _failures = Channel<Int>(Channel.BUFFERED)
+    val failures: Flow<Int> = _failures.receiveAsFlow()
+
+    private val documentLock = Mutex()
+
+    private val loaded = CompletableDeferred<Unit>()
 
     private val _saved = MutableStateFlow<Saved?>(null)
     val saved: StateFlow<Saved?> = _saved
@@ -131,12 +152,49 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     private var far = false
 
+    private val savedScreen = SavedScreen(
+        state.get<String>(KEY_SCREEN),
+        state.get<String>(KEY_CROP_ID),
+        state.get<Boolean>(KEY_CROP_EDITING) == true,
+        state.get<Boolean>(KEY_CROP_FOUND) == true,
+        state.get<DoubleArray>(KEY_CROP_QUAD),
+    )
+
+    private class SavedScreen(val kind: String?, val cropId: String?, val editing: Boolean, val found: Boolean, val quad: DoubleArray?)
+
     init {
+        _folder.value?.let { (uri, _) -> viewModelScope.launch { updateFolderName(uri) } }
         viewModelScope.launch {
-            val doc = withContext(Dispatchers.IO) { store.load() }
-            _document.value = doc
+            val doc = try {
+                withContext(Dispatchers.IO) { store.load() }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not load the document", e)
+                Document()
+            }
+            documentLock.withLock { _document.value = doc }
+            loaded.complete(Unit)
+            val restored = restoreScreen(doc, savedScreen)
+            documentLock.withLock {
+                val keep = _document.value.pages.map { it.id }.toSet() + listOfNotNull(restored, capturing, (_screen.value as? Screen.Crop)?.id)
+                withContext(Dispatchers.IO) { store.prune(keep) }
+            }
             val unread = withContext(Dispatchers.IO) { doc.pages.filter { store.text(it) == null || !store.image(it.id).exists() } }
             unread.forEach { queueOcr(it.id) }
+        }
+        viewModelScope.launch {
+            _screen.collect { s ->
+                state[KEY_SCREEN] = when (s) {
+                    Screen.Camera -> "camera"
+                    Screen.Pages -> "pages"
+                    is Screen.Crop -> "crop"
+                }
+                if (s is Screen.Crop) {
+                    state[KEY_CROP_ID] = s.id
+                    state[KEY_CROP_EDITING] = s.editing != null
+                    state[KEY_CROP_FOUND] = s.found
+                    state[KEY_CROP_QUAD] = s.quad.corners.flatMap { listOf(it.x, it.y) }.toDoubleArray()
+                }
+            }
         }
         viewModelScope.launch(ocrDispatcher) {
             for (id in ocrQueue) {
@@ -171,7 +229,9 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     fun onCaptured(image: ImageProxy) {
         analyzing = false
         _live.value = null
-        busyWhile {
+        val id = UUID.randomUUID().toString()
+        capturing = id
+        val started = busyWhile(onFailure = { analyzing = true }) {
             val crop = withContext(Dispatchers.Default) {
                 val photo = image.use { it.toUpright().bitmap }
                 val page = BitmapPageImage(photo)
@@ -180,9 +240,20 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
                 val t1 = SystemClock.uptimeMillis()
                 val quad = outline?.let { EdgeSnap.refine(page, it.quad.clampedTo(photo.width, photo.height)) }
                 Log.i(TAG, "still: ${photo.width}x${photo.height} ${photo.config}, confidence ${outline?.confidence}, pass ${outline?.angle}, detect ${t1 - t0} ms, snap ${SystemClock.uptimeMillis() - t1} ms")
-                Screen.Crop(photo, quad ?: Quad.full(photo.width, photo.height, inset = 0.1), found = quad != null)
+                Screen.Crop(photo, quad ?: Quad.full(photo.width, photo.height, inset = 0.1), found = quad != null, id = id)
+            }
+            photoWrite = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    writeJpeg(crop.photo, store.photo(id))
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not write the photo", e)
+                }
             }
             _screen.value = crop
+        }
+        if (!started) {
+            image.close()
+            analyzing = true
         }
     }
 
@@ -197,15 +268,17 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun usePage() {
-        val crop = _screen.value as? Screen.Crop ?: return
+        val dragged = _screen.value as? Screen.Crop ?: return
+        val crop = dragged.copy(quad = dragged.quad.ordered())
         if (!crop.quad.isPlausibleIn(crop.photo.width, crop.photo.height)) return
         busyWhile {
             val editing = crop.editing
             if (editing == null) {
-                val id = UUID.randomUUID().toString()
+                val id = crop.id
                 withContext(Dispatchers.Default) {
                     writeJpeg(warp(crop.photo, crop.quad), store.plain(id), PLAIN_QUALITY)
-                    writeJpeg(crop.photo, store.photo(id))
+                    photoWrite?.join()
+                    if (!store.photo(id).exists()) writeJpeg(crop.photo, store.photo(id))
                 }
                 updateDocument { it.add(id, crop.quad) }
                 queueOcr(id)
@@ -232,7 +305,37 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelCrop() {
-        if ((_screen.value as? Screen.Crop)?.editing != null) _screen.value = Screen.Pages else backToCamera()
+        val crop = _screen.value as? Screen.Crop ?: return
+        if (crop.editing != null) {
+            _screen.value = Screen.Pages
+        } else {
+            val write = photoWrite
+            viewModelScope.launch(Dispatchers.IO) {
+                write?.join()
+                store.delete(crop.id)
+            }
+            backToCamera()
+        }
+    }
+
+    private suspend fun restoreScreen(doc: Document, saved: SavedScreen): String? {
+        if (_screen.value != Screen.Camera) return null
+        when (saved.kind) {
+            "pages" -> if (!doc.isEmpty) showPages()
+            "crop" -> {
+                val id = saved.cropId ?: return null
+                val editing = saved.editing
+                if (editing != doc.pages.any { it.id == id }) return null
+                val c = saved.quad?.takeIf { it.size == 8 } ?: return null
+                val photo = withContext(Dispatchers.IO) { runCatching { BitmapFactory.decodeFile(store.photo(id).path) }.getOrNull() } ?: return null
+                if (_screen.value != Screen.Camera) return null
+                val quad = Quad(Point(c[0], c[1]), Point(c[2], c[3]), Point(c[4], c[5]), Point(c[6], c[7]))
+                analyzing = false
+                _screen.value = Screen.Crop(photo, quad, saved.found, editing = if (editing) id else null, id = id)
+                return id
+            }
+        }
+        return null
     }
 
     fun showPages() {
@@ -248,63 +351,90 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun movePage(id: String, index: Int) {
-        viewModelScope.launch { updateDocument { it.move(id, index) } }
+        viewModelScope.launch {
+            try {
+                updateDocument { it.move(id, index) }
+            } catch (e: Exception) {
+                failed("move failed", e)
+            }
+        }
     }
 
     fun deletePage(id: String) {
         viewModelScope.launch {
-            updateDocument { it.remove(id) }
-            withContext(Dispatchers.IO) { store.delete(id) }
+            try {
+                updateDocument { it.remove(id) }
+                withContext(Dispatchers.IO) { store.delete(id) }
+                if (_document.value.isEmpty && _screen.value == Screen.Pages) backToCamera()
+            } catch (e: Exception) {
+                failed("delete failed", e)
+            }
         }
+    }
+
+    fun readAgain(id: String) {
+        queueOcr(id)
     }
 
     fun turnPage(id: String) {
         busyWhile {
             updateDocument { it.turned(id, 1) }
-            queueOcr(id)
         }
     }
 
     fun discardDocument() {
         viewModelScope.launch {
-            _document.value = Document()
-            withContext(Dispatchers.IO) { store.clear() }
-            thumbnails.evictAll()
+            clearDocument()
             backToCamera()
         }
     }
 
     fun pickFolderAndSave(tree: Uri) {
-        saveFolder.set(tree)
-        _folder.value = tree to (saveFolder.displayName(tree) ?: "")
-        savePdf()
+        if (pickFolder(tree)) savePdf()
     }
 
-    fun pickFolder(tree: Uri) {
-        saveFolder.set(tree)
-        _folder.value = tree to (saveFolder.displayName(tree) ?: "")
+    fun pickFolder(tree: Uri): Boolean {
+        try {
+            saveFolder.set(tree)
+        } catch (e: SecurityException) {
+            failed("folder not granted", e, R.string.folder_failed)
+            return false
+        }
+        _folder.value = tree to ""
+        viewModelScope.launch { updateFolderName(tree) }
+        return true
+    }
+
+    private suspend fun updateFolderName(tree: Uri) {
+        val name = withContext(Dispatchers.IO) { saveFolder.displayName(tree) } ?: return
+        _folder.update { f -> if (f?.first == tree) tree to name else f }
     }
 
     fun savePdf() {
-        val (tree, folderName) = _folder.value ?: return
+        val tree = _folder.value?.first ?: return
         busyWhile {
             pending.first { it.isEmpty() }
             val doc = _document.value
             if (doc.isEmpty) return@busyWhile
             val name = pdfName()
+            val folderName = _folder.value?.second?.ifEmpty { null } ?: withContext(Dispatchers.IO) { saveFolder.displayName(tree) } ?: ""
             val result = withContext(Dispatchers.IO) {
                 runCatching { saveFolder.writePdf(tree, name, doc.pages.size) { i -> pdfPage(doc.pages[i]) } }
             }
             result.onSuccess { uri ->
-                Log.i(TAG, "saved ${doc.pages.size} pages as $name")
-                _saved.value = Saved(name, folderName, uri)
-                _document.value = Document()
-                withContext(Dispatchers.IO) { store.clear() }
-                thumbnails.evictAll()
+                val actual = withContext(Dispatchers.IO) { saveFolder.documentName(uri) } ?: name
+                Log.i(TAG, "saved ${doc.pages.size} pages as $actual")
+                _saved.value = Saved(actual, folderName, uri)
+                clearDocument()
                 backToCamera()
             }.onFailure { e ->
                 Log.w(TAG, "save failed", e)
                 _saved.value = Saved(name, folderName, null)
+                val usable = withContext(Dispatchers.IO) { saveFolder.uri?.takeIf { saveFolder.exists(it) } }
+                if (usable == null) {
+                    withContext(Dispatchers.IO) { saveFolder.forget() }
+                    _folder.value = null
+                }
             }
         }
     }
@@ -323,7 +453,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
             if (doc.isEmpty) return@busyWhile
             val app = getApplication<Application>()
             val uri = withContext(Dispatchers.IO) {
-                val dir = File(app.cacheDir, "share")
+                val dir = File(app.cacheDir, SHARE_DIR)
                 dir.deleteRecursively()
                 dir.mkdirs()
                 val file = File(dir, pdfName())
@@ -344,14 +474,17 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     val shutter: SharedFlow<Unit> = _shutter
 
     fun onShutterKey(): Boolean {
-        if (_screen.value != Screen.Camera || _busy.value) return false
+        if (_screen.value != Screen.Camera || _busy.value || _shutter.subscriptionCount.value == 0) return false
         _shutter.tryEmit(Unit)
         return true
     }
 
     private fun pdfName() = "Scan " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm", Locale.ROOT)) + ".pdf"
 
-    private fun pdfPage(page: Document.Page) = PdfPage(pageImage(page.id).readBytes(), store.text(page), page.turns)
+    private fun pdfPage(page: Document.Page): PdfPage {
+        val text = store.text(page)
+        return PdfPage(pageImage(page.id).readBytes(), text?.text, page.turns, text?.turns ?: page.turns)
+    }
 
     private fun pageImage(id: String): File = store.image(id).takeIf { it.exists() } ?: store.plain(id)
 
@@ -370,6 +503,7 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun queueOcr(id: String) {
         release?.cancel()
+        _unread.update { it - id }
         pending.update { it + (id to (it[id] ?: 0) + 1) }
         ocrQueue.trySend(id)
     }
@@ -393,47 +527,74 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun readPage(id: String) {
         try {
-            var page = _document.value.pages.find { it.id == id } ?: return
+            val page = _document.value.pages.find { it.id == id } ?: return
             try {
                 enhance(id)
             } catch (e: Exception) {
                 Log.w(TAG, "enhance failed for $id", e)
             }
             if (store.text(page) != null) return
-            var bitmap = BitmapFactory.decodeFile(store.plain(id).path)?.let { turn(it, page.turns) } ?: return
+            val bitmap = BitmapFactory.decodeFile(store.plain(id).path)?.let { turn(it, page.turns) }
+            if (bitmap == null) {
+                _unread.update { it + id }
+                return
+            }
             val locales = LocaleList.getDefault()
             val languages = RecModel.forLocales(List(locales.size()) { locales[it] })
             val t0 = SystemClock.uptimeMillis()
-            val text = if (page.revision == 0) {
-                val upright = ocr.recognizeUpright(BitmapPageImage(bitmap), languages)
-                val degrees = upright.degrees
-                if (degrees != 0) {
-                    bitmap = turn(bitmap, degrees / 90)
-                    updateDocument { it.turned(id, degrees / 90) }
-                    page = _document.value.pages.find { it.id == id } ?: return
-                    Log.i(TAG, "turned $id by $degrees degrees")
+            val upright = ocr.recognizeUpright(BitmapPageImage(bitmap), languages)
+            val quarters = upright.degrees / 90
+            Log.i(TAG, "ocr: ${bitmap.width}x${bitmap.height}, ${upright.text.words.size} words, upright by ${upright.degrees}, ${SystemClock.uptimeMillis() - t0} ms")
+            if (quarters != 0 && page.revision == 0) {
+                var turned = false
+                updateDocument { d ->
+                    if (d.pages.find { it.id == id }?.revision != page.revision) return@updateDocument d
+                    turned = true
+                    d.turned(id, quarters)
                 }
-                upright.text
-            } else {
-                ocr.recognize(BitmapPageImage(bitmap), languages).text
+                if (turned) Log.i(TAG, "turned $id by ${upright.degrees} degrees")
             }
-            Log.i(TAG, "ocr: ${bitmap.width}x${bitmap.height}, ${text.words.size} words, ${SystemClock.uptimeMillis() - t0} ms")
-            val now = _document.value.pages.find { it.id == id }
-            if (now?.revision == page.revision) store.saveText(page, text)
+            if (_document.value.pages.find { it.id == id }?.cut == page.cut) store.saveText(page, upright.text, page.turns + quarters)
         } catch (e: Exception) {
             Log.w(TAG, "ocr failed for $id", e)
+            _unread.update { it + id }
         } finally {
+            if (_document.value.pages.none { it.id == id }) store.delete(id)
             pending.update { m ->
                 val left = (m[id] ?: 1) - 1
                 if (left <= 0) m - id else m + (id to left)
+            }
+            if (id !in pending.value) {
+                val page = _document.value.pages.find { it.id == id }
+                if (page == null || store.text(page) != null) _unread.update { it - id }
             }
         }
     }
 
     private suspend fun updateDocument(change: (Document) -> Document) {
-        val doc = change(_document.value)
+        loaded.await()
+        documentLock.withLock { changeDocument(change) }
+    }
+
+    private suspend fun changeDocument(change: (Document) -> Document) {
+        val old = _document.value
+        val doc = change(old)
+        if (doc == old) return
         _document.value = doc
         withContext(Dispatchers.IO) { store.save(doc) }
+    }
+
+    private suspend fun clearDocument() {
+        loaded.await()
+        documentLock.withLock {
+            _document.value = Document()
+            _unread.value = emptySet()
+            withContext(Dispatchers.IO) {
+                store.clear()
+                File(getApplication<Application>().cacheDir, SHARE_DIR).deleteRecursively()
+            }
+        }
+        thumbnails.evictAll()
     }
 
     private fun turn(bitmap: Bitmap, quarters: Int): Bitmap {
@@ -445,13 +606,16 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
     private fun enhance(id: String) {
         if (store.image(id).exists()) return
         val t0 = SystemClock.uptimeMillis()
-        val page = BitmapFactory.decodeFile(store.plain(id).path, BitmapFactory.Options().apply { inMutable = true }) ?: return
+        val plain = store.plain(id)
+        val cut = plain.lastModified()
+        val page = BitmapFactory.decodeFile(plain.path, BitmapFactory.Options().apply { inMutable = true }) ?: return
         val t1 = SystemClock.uptimeMillis()
         val px = IntArray(page.width * page.height)
         page.getPixels(px, 0, page.width, 0, 0, page.width, page.height)
         Enhance.apply(px, page.width, page.height)
         val t2 = SystemClock.uptimeMillis()
         page.setPixels(px, 0, page.width, 0, 0, page.width, page.height)
+        if (plain.lastModified() != cut) return
         writeJpeg(page, store.image(id))
         Log.i(TAG, "enhance: ${page.width}x${page.height}, decode ${t1 - t0} ms, enhance ${t2 - t1} ms, encode ${SystemClock.uptimeMillis() - t2} ms")
         _enhanced.update { it + 1 }
@@ -464,22 +628,42 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         check(temp.renameTo(file) || (file.delete() && temp.renameTo(file))) { "could not write $file" }
     }
 
-    private fun busyWhile(work: suspend () -> Unit) {
+    private fun busyWhile(onFailure: () -> Unit = {}, work: suspend () -> Unit): Boolean {
+        if (_busy.value) return false
+        _busy.value = true
         viewModelScope.launch {
-            _busy.value = true
             try {
                 work()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed("failed", e)
+                onFailure()
+            } catch (e: OutOfMemoryError) {
+                failed("out of memory", e)
+                onFailure()
             } finally {
                 _busy.value = false
             }
         }
+        return true
+    }
+
+    private fun failed(what: String, e: Throwable, message: Int = R.string.something_failed) {
+        Log.w(TAG, what, e)
+        _failures.trySend(message)
     }
 
     override fun onCleared() {
         analysisExecutor.execute { if (modelLoader.isInitialized()) modelLoader.value.close() }
         analysisExecutor.shutdown()
         ocrQueue.close()
-        if (ocrModels.isInitialized()) CoroutineScope(ocrDispatcher).launch { ocrModels.value.close() }
+        if (ocrModels.isInitialized()) {
+            CoroutineScope(ocrDispatcher).launch {
+                if (ocrLoader.isInitialized()) ocr.close()
+                ocrModels.value.close()
+            }
+        }
     }
 
     private companion object {
@@ -493,5 +677,11 @@ class SheetViewModel(application: Application) : AndroidViewModel(application) {
         const val FAR_ON = 0.5
         const val FAR_OFF = 0.58
         const val THUMBNAIL_EDGE = 480
+        const val SHARE_DIR = "share"
+        const val KEY_SCREEN = "screen"
+        const val KEY_CROP_ID = "cropId"
+        const val KEY_CROP_EDITING = "cropEditing"
+        const val KEY_CROP_FOUND = "cropFound"
+        const val KEY_CROP_QUAD = "cropQuad"
     }
 }
