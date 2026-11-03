@@ -6,6 +6,17 @@
 package de.schliweb.sheet.camera
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.core.app.ActivityCompat
+import androidx.core.content.edit
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,6 +72,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -93,19 +105,56 @@ import de.schliweb.sheet.ui.isLandscape
 @Composable
 fun CameraScreen(vm: SheetViewModel) {
     val context = LocalContext.current
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    fun allowed() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    var granted by remember { mutableStateOf(allowed()) }
+    val prefs = remember { context.getSharedPreferences("sheet", Context.MODE_PRIVATE) }
+    fun rationale() = context.findActivity()?.let { ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA) } == true
+    var blocked by remember { mutableStateOf(!granted && prefs.getBoolean(KEY_BLOCKED, false) && !rationale()) }
+    var denials by rememberSaveable { mutableIntStateOf(0) }
+    var rationaleBefore by remember { mutableStateOf(false) }
+    var wasBlocked by remember { mutableStateOf(false) }
+    var fromSettings by remember { mutableStateOf(false) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        granted = ok
+        denials = if (ok) 0 else denials + 1
+        blocked = !ok && !rationale() && (rationaleBefore || denials >= 2 || wasBlocked)
+        prefs.edit { putBoolean(KEY_BLOCKED, blocked) }
     }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
-    LaunchedEffect(Unit) { if (!granted) ask.launch(Manifest.permission.CAMERA) }
+    val request = {
+        rationaleBefore = rationale()
+        wasBlocked = blocked
+        ask.launch(Manifest.permission.CAMERA)
+    }
+    LaunchedEffect(Unit) { if (!granted) request() }
+    LifecycleResumeEffect(Unit) {
+        granted = allowed()
+        if (granted && blocked) {
+            blocked = false
+            prefs.edit { putBoolean(KEY_BLOCKED, false) }
+        }
+        if (fromSettings) {
+            fromSettings = false
+            if (!granted) request()
+        }
+        onPauseOrDispose { }
+    }
     if (!granted) {
         Column(
             Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(stringResource(R.string.camera_needed))
-            Button(onClick = { ask.launch(Manifest.permission.CAMERA) }) { Text(stringResource(R.string.allow_camera)) }
+            Text(stringResource(if (blocked) R.string.camera_blocked else R.string.camera_needed), color = Color.White)
+            if (blocked) {
+                Button(onClick = {
+                    val settings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                    fromSettings = runCatching { context.startActivity(settings) }.isSuccess
+                }) { Text(stringResource(R.string.open_settings)) }
+            } else {
+                Button(onClick = request) { Text(stringResource(R.string.allow_camera)) }
+            }
+            val document by vm.document.collectAsState()
+            if (!document.isEmpty) PagesButton(vm, document, Modifier)
         }
         return
     }
@@ -144,6 +193,11 @@ private fun Viewfinder(vm: SheetViewModel) {
     val scope = rememberCoroutineScope()
     val steady = remember { Steady(context) }
     var aiming by remember { mutableStateOf(false) }
+    val activity = remember(context) { context.findActivity() }
+    fun holdRotation(hold: Boolean) {
+        activity?.requestedOrientation = if (hold) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    DisposableEffect(Unit) { onDispose { holdRotation(false) } }
     val takePicture = {
         controller.takePicture(
             ContextCompat.getMainExecutor(context),
@@ -151,11 +205,13 @@ private fun Viewfinder(vm: SheetViewModel) {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     vm.onCaptured(image)
                     aiming = false
+                    holdRotation(false)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
                     vm.onCaptureFailed()
                     aiming = false
+                    holdRotation(false)
                 }
             },
         )
@@ -163,6 +219,7 @@ private fun Viewfinder(vm: SheetViewModel) {
     val shoot: () -> Unit = shoot@{
         if (aiming || busy) return@shoot
         aiming = true
+        holdRotation(true)
         val (x, y) = pageCentre(live, previewView)
         val action = FocusMeteringAction.Builder(
             previewView.meteringPointFactory.createPoint(x, y),
@@ -231,6 +288,14 @@ private fun Viewfinder(vm: SheetViewModel) {
             )
         }
     }
+}
+
+private const val KEY_BLOCKED = "cameraBlocked"
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private fun pageCentre(live: LiveOutline?, preview: PreviewView): Pair<Float, Float> {
