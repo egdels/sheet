@@ -1,0 +1,1 @@
+Texterkennung rund 40 % schneller. Gedrehte Seiten behalten ihren Text. Seiten, deren Text nicht gelesen werden konnte, sind markiert, mit „Erneut lesen“. Nach dem Beenden durch Android geht es dort weiter, wo du warst. Fehler zeigen eine Meldung, statt die App zu schließen. Löschen fragt nach. Scans sind von Backups ausgenommen. ONNX Runtime 1.31.1 ohne Telemetrie.

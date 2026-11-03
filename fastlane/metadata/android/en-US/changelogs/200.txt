@@ -1,0 +1,1 @@
+OCR about 40 % faster. Turning a page keeps its text. Pages whose text could not be read are marked, with "Read again". Comes back where you left it after Android closed it. Errors show a message instead of closing the app. Delete asks first. Scans are left out of backups. ONNX Runtime 1.31.1 without telemetry.
