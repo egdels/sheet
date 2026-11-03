@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
 data class Document(val pages: List<Page> = emptyList()) {
 
     @Serializable
-    data class Page(val id: String, val revision: Int = 0, val quad: Quad? = null, val turns: Int = 0)
+    data class Page(val id: String, val revision: Int = 0, val quad: Quad? = null, val turns: Int = 0, val cut: Int = 0)
 
     val isEmpty: Boolean get() = pages.isEmpty()
 
@@ -33,7 +33,7 @@ data class Document(val pages: List<Page> = emptyList()) {
 
     fun turned(id: String, quarters: Int): Document = change(id) { it.copy(revision = it.revision + 1, turns = (it.turns + quarters).mod(4)) }
 
-    fun recut(id: String, quad: Quad): Document = change(id) { it.copy(revision = it.revision + 1, quad = quad) }
+    fun recut(id: String, quad: Quad): Document = change(id) { it.copy(revision = it.revision + 1, quad = quad, cut = it.cut + 1) }
 
     private fun change(id: String, f: (Page) -> Page): Document = copy(pages = pages.map { if (it.id == id) f(it) else it })
 }

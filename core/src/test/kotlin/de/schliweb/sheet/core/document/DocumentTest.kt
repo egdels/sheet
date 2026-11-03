@@ -51,12 +51,14 @@ class DocumentTest {
         val doc = abc.remove("c")
         doc.pages.forEach { store.image(it.id).writeText("jpeg") }
         store.save(doc)
-        store.saveText(doc.pages[0], text)
+        store.saveText(doc.pages[0], text, 1)
         val loaded = store.load()
         assertEquals(doc, loaded)
-        assertEquals(text, store.text(loaded.pages[0]))
+        assertEquals(text, store.text(loaded.pages[0])?.text)
+        assertEquals(1, store.text(loaded.pages[0])?.turns)
         assertNull(store.text(loaded.pages[1]))
-        assertNull(store.text(loaded.touched("a").pages[0]))
+        assertEquals(text, store.text(loaded.turned("a", 1).pages[0])?.text)
+        assertNull(store.text(loaded.recut("a", de.schliweb.sheet.core.Quad.full(10, 10)).pages[0]))
         dir.deleteRecursively()
     }
 
@@ -69,6 +71,50 @@ class DocumentTest {
         assertEquals(listOf("a"), store.load().pages.map { it.id })
         store.clear()
         assertTrue(store.load().isEmpty)
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun pageNotYetEnhancedSurvivesARestart() {
+        val dir = Files.createTempDirectory("doc").toFile()
+        val store = DocumentStore(dir)
+        val doc = Document().add("a").add("b").add("gone")
+        store.plain("a").writeText("jpeg")
+        store.image("b").writeText("jpeg")
+        store.plain("b").writeText("jpeg")
+        store.save(doc)
+        assertEquals(listOf("a", "b"), store.load().pages.map { it.id })
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun brokenDocumentIsRebuiltFromThePageImages() {
+        val dir = Files.createTempDirectory("doc").toFile()
+        val store = DocumentStore(dir)
+        store.plain("a").writeText("jpeg")
+        store.plain("a").setLastModified(1_000_000)
+        store.plain("b").writeText("jpeg")
+        store.plain("b").setLastModified(2_000_000)
+        store.saveText(Document.Page("a"), text, 0)
+        java.io.File(dir, "document.json").writeText("{\"pages\":[{\"id\":")
+        val loaded = store.load()
+        assertEquals(listOf("a", "b"), loaded.pages.map { it.id })
+        assertNull(store.text(loaded.pages[0]))
+        assertTrue(java.io.File(dir, "document.json.bad").exists())
+        assertEquals(loaded, store.load())
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun savesFromSeveralThreadsNeverLoseTheDocument() {
+        val dir = Files.createTempDirectory("doc").toFile()
+        val store = DocumentStore(dir)
+        store.plain("a").writeText("jpeg")
+        val docs = (0 until 4).map { n -> Document().add("a").turned("a", n) }
+        val threads = docs.map { d -> Thread { repeat(200) { store.save(d) } } }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+        assertTrue(store.load().pages.single().id == "a")
         dir.deleteRecursively()
     }
 }
