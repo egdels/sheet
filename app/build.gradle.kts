@@ -81,29 +81,24 @@ kotlin {
     }
 }
 
-val checkOnnxRuntime = tasks.register("checkOnnxRuntime") {
-    val configs = rootProject.layout.projectDirectory.dir("ort").asFileTree.matching { include("*.config") }
-    val stamp = layout.projectDirectory.file("libs/onnxruntime.stamp").asFile
-    inputs.files(configs)
+val checkNcnn = tasks.register("checkNcnn") {
+    val layers = rootProject.layout.projectDirectory.file("native/layers.config").asFile
+    val stamp = layout.projectDirectory.file("libs/ncnn.stamp").asFile
+    inputs.file(layers)
     doLast {
-        val digest = MessageDigest.getInstance("SHA-256")
-        for (f in configs.files.sortedBy { it.name }) {
-            digest.update(f.name.toByteArray() + 0)
-            val lines = f.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-            digest.update(lines.joinToString("\n").toByteArray() + 0)
-        }
-        val want = digest.digest().joinToString("") { "%02x".format(it) }
+        val lines = layers.readLines().map { it.trimEnd() }.filter { it.isNotBlank() && !it.trimStart().startsWith("#") }
+        val text = lines.joinToString("") { "$it " }
+        val want = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
         val have = stamp.takeIf { it.exists() }?.readText()?.trim()
         if (have != want) {
-            throw GradleException("ONNX Runtime in src/main/jniLibs is not built from the current ort/*.config (stamp ${have ?: "missing"}): run scripts/build_onnxruntime.sh")
+            throw GradleException("libsheet_ncnn in src/main/jniLibs is not built from the current native/layers.config (stamp ${have ?: "missing"}): run scripts/build_ncnn.sh")
         }
     }
 }
-tasks.named("preBuild") { dependsOn(checkOnnxRuntime) }
+tasks.named("preBuild") { dependsOn(checkNcnn) }
 
 dependencies {
     implementation(project(":core"))
-    implementation(files("libs/onnxruntime.jar"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
