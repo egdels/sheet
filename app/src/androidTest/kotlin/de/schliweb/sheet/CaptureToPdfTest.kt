@@ -50,7 +50,7 @@ class CaptureToPdfTest {
         File(app.filesDir, "document").deleteRecursively()
         lateinit var vm: SheetViewModel
         instrumentation.runOnMainSync { vm = SheetViewModel(app, SavedStateHandle()) }
-        AssetOcrModels(app, arena = false).use { models ->
+        AssetOcrModels(app).use { models ->
             val check = OcrEngine(models, readers = 4)
             for (quarters in 0..3) {
                 val held = "page turned ${90 * quarters}"
