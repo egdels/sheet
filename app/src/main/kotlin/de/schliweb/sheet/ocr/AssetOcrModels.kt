@@ -3,47 +3,30 @@
 
 package de.schliweb.sheet.ocr
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
 import android.content.Context
+import de.schliweb.sheet.core.ncnn.NcnnNet
 import de.schliweb.sheet.core.ocr.OcrModel
 import de.schliweb.sheet.core.ocr.OcrModels
 import de.schliweb.sheet.core.ocr.RecModel
 import de.schliweb.sheet.core.ocr.Tensor
 import de.schliweb.sheet.core.ocr.Vocab
-import java.nio.FloatBuffer
 
-class AssetOcrModels(private val context: Context, private val arena: Boolean = true) : OcrModels, AutoCloseable {
-    private val env = OrtEnvironment.getEnvironment()
-    private val sessions = mutableMapOf<String, OrtSession>()
+class AssetOcrModels(private val context: Context) : OcrModels, AutoCloseable {
+    private val nets = mutableMapOf<String, NcnnNet>()
     private val vocabs = mutableMapOf<RecModel, Vocab>()
 
-    private fun model(name: String, threads: Int) = OcrModel { input ->
-        val session = synchronized(sessions) {
-            sessions.getOrPut(name) {
-                val bytes = context.assets.open("$DIR/$name.ort").use { it.readBytes() }
-                env.createSession(bytes, OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(threads)
-                    if (!arena) {
-                        setCPUArenaAllocator(false)
-                        setMemoryPatternOptimization(false)
-                    }
-                })
-            }
+    private fun model(name: String, threads: Int, detector: Boolean) = OcrModel { input ->
+        val net = synchronized(nets) {
+            nets.getOrPut(name) { NcnnNet.fromAssets(context.assets, "$DIR/$name", threads) }
         }
-        OnnxTensor.createTensor(env, FloatBuffer.wrap(input.data), input.shape).use { t ->
-            session.run(mapOf(session.inputNames.first() to t)).use { r ->
-                val out = r.get(0) as OnnxTensor
-                val b = out.floatBuffer
-                Tensor(FloatArray(b.remaining()).also { b.get(it) }, out.info.shape)
-            }
-        }
+        val out = net.run(input.data, input.shape[1].toInt(), input.shape[2].toInt(), input.shape[3].toInt())
+        val shape = if (detector) longArrayOf(1, 1, out.height.toLong(), out.width.toLong()) else longArrayOf(1, out.height.toLong(), out.width.toLong())
+        Tensor(out.data, shape)
     }
 
-    override val detector: OcrModel = model("det", threads = 2)
+    override val detector: OcrModel = model("det", threads = 2, detector = true)
 
-    override fun recognizer(model: RecModel): OcrModel = model(model.asset, threads = 1)
+    override fun recognizer(model: RecModel): OcrModel = model(model.asset, threads = 1, detector = false)
 
     override fun vocab(model: RecModel): Vocab = synchronized(vocabs) {
         vocabs.getOrPut(model) {
@@ -51,9 +34,9 @@ class AssetOcrModels(private val context: Context, private val arena: Boolean = 
         }
     }
 
-    fun release() = synchronized(sessions) {
-        sessions.values.forEach { it.close() }
-        sessions.clear()
+    fun release() = synchronized(nets) {
+        nets.values.forEach { it.close() }
+        nets.clear()
     }
 
     override fun close() = release()
