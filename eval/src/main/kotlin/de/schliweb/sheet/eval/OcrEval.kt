@@ -54,7 +54,7 @@ object OcrEval {
             rgb.setRGB(0, 0, rgb.width, rgb.height, px, 0, rgb.width)
             return rgb
         }
-        OrtOcrModels(models).use { m ->
+        NcnnOcrModels(models).use { m ->
             val engine = OcrEngine(m, maxSide, probeScripts = probe, withV6 = v6)
             if (orientation) {
                 orientations(engine, dirs, locales)
