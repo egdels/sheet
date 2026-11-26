@@ -1,0 +1,1 @@
+Die Modelle laufen mit NCNN statt ONNX Runtime: gleiche Ergebnisse, kleinere App, schneller auf den getesteten Geräten.
