@@ -33,12 +33,12 @@ carries no marks of the agent, to test whether anyone can tell from it.
 [AI_POLICY.md](AI_POLICY.md) describes who does what, and says so.
 
 What "better" means so far, against MakeACopy, measured with the tools
-in this repository (commands in [DEVELOPMENT.md](DEVELOPMENT.md)):
+in this repository:
 
 | | MakeACopy | Sheet |
 |---|---|---|
 | Source of the app (main, without tests) | ~90,000 lines of Java | ~5,300 lines of Kotlin |
-| Native dependencies | OpenCV, Tesseract, ONNX Runtime | ONNX Runtime only, built from source |
+| Native dependencies | OpenCV, Tesseract, ONNX Runtime | NCNN only, built from source |
 | OCR on a line tilted by 2° (character error rate) | 0.74 (axis-aligned boxes) | 0.01 (boxes follow the line) |
 | Multi-column reading order | an option | always on; two-column sample 0.66 → 0.00 |
 | Edge snap, SmartDoc photos with all corners within 1 % (65 of 75 before snapping) | 56 of 75: snaps onto printed border rules | 64 of 75 |
@@ -111,7 +111,7 @@ English and German.
 ## Measured
 
 `./gradlew :eval:run` runs the same pipeline on the Mac against labelled
-photos (see [DEVELOPMENT.md](DEVELOPMENT.md)). With the shipped models: mean corner error
+photos. With the shipped models: mean corner error
 0.9 % of the photo's diagonal on 150 tilted hold-out photos; OCR character
 error rate 1.3 % on MakeACopy's eval pages, on par with the reference
 PaddleOCR with the same models where MakeACopy's own port fell behind on
@@ -120,15 +120,14 @@ skewed and multi-column pages.
 ## Building
 
 ```sh
-git submodule update --init external/onnxruntime
-git -C external/onnxruntime submodule update --init cmake/external/onnx
-scripts/build_onnxruntime.sh     # needs cmake, ninja, python3 with flatbuffers, the NDK
+git submodule update --init external/ncnn
+scripts/build_ncnn.sh            # needs cmake, make and the NDK
 ./gradlew :app:assembleDebug
 ```
 
-`scripts/build_onnxruntime.sh` builds ONNX Runtime for the four Android
-ABIs, reduced to the operators of the shipped models; the app links that,
-nothing prebuilt. Details and the evaluation tools are in [DEVELOPMENT.md](DEVELOPMENT.md).
+`scripts/build_ncnn.sh` builds [NCNN](https://github.com/Tencent/ncnn)
+for the four Android ABIs, about a minute each, reduced to the layers of
+the shipped models; the app links that, nothing prebuilt.
 
 ## Privacy
 
