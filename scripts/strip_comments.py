@@ -13,14 +13,16 @@ third_party_licenses/, the Gradle wrapper) and documentation (*.md) are
 left alone, and so is this script.
 
 Per language:
-- Kotlin, Kotlin scripts, Java: a lexer that knows strings, raw strings,
-  string templates, character literals and (in Kotlin) nested block
-  comments, so "//" in a URL or a string is never taken for a comment.
+- Kotlin, Kotlin scripts, Java, C++: a lexer that knows strings, raw
+  strings, string templates, character literals and (in Kotlin) nested
+  block comments, so "//" in a URL or a string is never taken for a
+  comment. C++ goes through the Java rules: the bridge in native/ has no
+  raw string literals.
 - Python: comments via the tokenizer, docstrings via the AST.
 - Shell: '#' at the start of a line or after whitespace, outside quotes;
   the shebang stays.
 - XML: <!-- ... -->.
-- ProGuard, properties, TOML, YAML, ONNX Runtime operator lists,
+- ProGuard, properties, TOML, YAML, CMake, the NCNN layer list,
   .gitignore: whole-line '#' comments.
 
 A line left empty by a removed comment is dropped, runs of blank lines
@@ -37,7 +39,7 @@ import tokenize
 
 SKIP_DIRS = {".git", ".gradle", ".kotlin", ".idea", "build", "external", "third_party_licenses", "jniLibs", "libs", "__pycache__", "node_modules"}
 SKIP_FILES = {"gradlew", "gradlew.bat", "strip_comments.py"}
-HASH_LINE = {".pro", ".properties", ".toml", ".yml", ".yaml", ".config", ".gitignore"}
+HASH_LINE = {".pro", ".properties", ".toml", ".yml", ".yaml", ".config", ".cmake", ".gitignore"}
 LICENCE = re.compile(r"Copyright \(C\)|SPDX-License-Identifier")
 
 
@@ -238,9 +240,11 @@ def strip_hash_lines(src: str) -> str:
 
 def stripper(name: str):
     ext = os.path.splitext(name)[1] if name != ".gitignore" else ".gitignore"
+    if name == "CMakeLists.txt":
+        ext = ".cmake"
     if ext in (".kt", ".kts"):
         return lambda s: strip_c_like(s, nested=True, templates=True)
-    if ext == ".java":
+    if ext in (".java", ".cpp", ".h"):
         return lambda s: strip_c_like(s, nested=False, templates=False)
     if ext == ".py":
         return strip_python
