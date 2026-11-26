@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - The models run with NCNN instead of ONNX Runtime: same results, smaller
   app, faster on the tested phones.
 
+### Fixed
+
+- The text in saved PDFs can be searched and selected in Apple's viewers
+  (Preview, Safari, iOS) too; they ignored it before.
+
 ## [0.2.0]
 
 ### Added
