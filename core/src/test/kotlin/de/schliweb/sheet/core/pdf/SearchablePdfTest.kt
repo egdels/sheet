@@ -144,6 +144,30 @@ class SearchablePdfTest {
     }
 
     @Test
+    fun toUnicodeRangesStayWithinOneHighByte() {
+        val text = OcrPage(1240, 1754, listOf(OcrLine(listOf(word("Termin", 124.0, 175.0, 300.0, 215.0)), rtl = false)))
+        val out = ByteArrayOutputStream()
+        SearchablePdf.write(out, 1, { PdfPage(jpeg(1240, 1754), text) })
+        val pdf = String(out.toByteArray(), Charsets.ISO_8859_1)
+        val blocks = Regex("(\\d+) beginbfrange\n(.*?)endbfrange", RegexOption.DOT_MATCHES_ALL).findAll(pdf).toList()
+        assertTrue(blocks.isNotEmpty())
+        val covered = mutableSetOf<Int>()
+        for (block in blocks) {
+            val lines = block.groupValues[2].trim().lines()
+            assertEquals(block.groupValues[1].toInt(), lines.size)
+            assertTrue(lines.size <= 100)
+            for (line in lines) {
+                val (from, to, target) = Regex("<([0-9A-F]{4})> <([0-9A-F]{4})> <([0-9A-F]{4})>").matchEntire(line)!!.destructured.toList().map { it.toInt(16) }
+                assertEquals(from shr 8, to shr 8, line)
+                assertEquals(from, target, line)
+                assertTrue(to - from <= 0xFF - (target and 0xFF), line)
+                covered += from..to
+            }
+        }
+        assertEquals((0x0000..0xFFFF).filter { it !in 0xD800..0xDFFF }.toSet(), covered)
+    }
+
+    @Test
     fun emptyTextSizeWritesNoText() {
         val text = OcrPage(0, 0, listOf(OcrLine(listOf(word("x", 0.0, 0.0, 1.0, 1.0)), rtl = false)))
         val out = ByteArrayOutputStream()

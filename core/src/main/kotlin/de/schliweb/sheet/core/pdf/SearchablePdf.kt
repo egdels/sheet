@@ -116,7 +116,11 @@ object SearchablePdf {
         s.append("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n")
         s.append("/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n")
         s.append("1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n")
-        s.append("2 beginbfrange\n<0000> <D7FF> <0000>\n<E000> <FFFF> <E000>\nendbfrange\n")
+        for (chunk in (0x00..0xFF).filter { it !in 0xD8..0xDF }.chunked(100)) {
+            s.append("${chunk.size} beginbfrange\n")
+            for (high in chunk) s.append(String.format(Locale.ROOT, "<%02X00> <%02XFF> <%02X00>\n", high, high, high))
+            s.append("endbfrange\n")
+        }
         for (chunk in astral.entries.chunked(100)) {
             s.append("${chunk.size} beginbfchar\n")
             for ((cp, code) in chunk) {
