@@ -5,7 +5,6 @@
 
 package de.schliweb.sheet
 
-import android.app.ActivityManager
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -38,7 +37,7 @@ import de.schliweb.sheet.core.ocr.RecModel
 import de.schliweb.sheet.core.pdf.PdfPage
 import de.schliweb.sheet.core.pdf.SearchablePdf
 import de.schliweb.sheet.corners.BitmapPageImage
-import de.schliweb.sheet.corners.OrtDocQuadModel
+import de.schliweb.sheet.corners.NcnnDocQuadModel
 import de.schliweb.sheet.crop.warp
 import de.schliweb.sheet.export.SaveFolder
 import de.schliweb.sheet.ocr.AssetOcrModels
@@ -86,13 +85,10 @@ sealed interface Screen {
 }
 
 class SheetViewModel(application: Application, private val state: SavedStateHandle) : AndroidViewModel(application) {
-    private val modelLoader = lazy { OrtDocQuadModel(application) }
+    private val modelLoader = lazy { NcnnDocQuadModel(application) }
     private val detector by lazy { CornerDetector(modelLoader.value) }
     private val tracker = LiveTracker()
-    private val ocrModels = lazy {
-        val memory = ActivityManager.MemoryInfo().also { application.getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
-        AssetOcrModels(application, arena = memory.totalMem >= ARENA_FROM_BYTES)
-    }
+    private val ocrModels = lazy { AssetOcrModels(application) }
     private val ocrLoader = lazy { OcrEngine(ocrModels.value, readers = OCR_READERS) }
     private val ocr by ocrLoader
     private val store = DocumentStore(File(application.filesDir, "document"))
@@ -672,7 +668,6 @@ class SheetViewModel(application: Application, private val state: SavedStateHand
         const val JPEG_QUALITY = 90
         const val PLAIN_QUALITY = 100
         const val OCR_READERS = 4
-        const val ARENA_FROM_BYTES = 6L * 1024 * 1024 * 1024
         const val RELEASE_AFTER_MS = 30_000L
         const val FAR_ON = 0.5
         const val FAR_OFF = 0.58
