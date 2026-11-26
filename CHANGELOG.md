@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Changed
 
 - The models run with NCNN instead of ONNX Runtime: same results, smaller

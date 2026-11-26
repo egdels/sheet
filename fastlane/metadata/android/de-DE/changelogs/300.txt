@@ -1,1 +1,1 @@
-Die Modelle laufen mit NCNN statt ONNX Runtime: gleiche Ergebnisse, kleinere App, schneller auf den getesteten Geräten.
+Die Modelle laufen mit NCNN statt ONNX Runtime: gleiche Ergebnisse, kleinere App, schneller auf den getesteten Geräten. Der Text in gespeicherten PDFs lässt sich jetzt auch in Apples Anzeigeprogrammen (Vorschau, Safari, iOS) durchsuchen und markieren.
