@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The models run with NCNN instead of ONNX Runtime: same results, smaller
+  app, faster on the tested phones.
+
+## [0.2.0]
+
 ### Added
 
 - Pages whose text could not be read are marked in the overview, with
