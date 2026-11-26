@@ -3,13 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import hashlib
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-import onnxruntime as ort
 import yaml
 
 NAME = "PP-OCRv6_small_rec"
@@ -23,19 +20,7 @@ def main() -> None:
         sys.exit(f"{onnx}: sha256 {digest}, expected {ONNX_SHA256}")
     chars = yaml.safe_load((src / "inference.yml").read_text(encoding="utf-8"))["PostProcess"]["character_dict"]
     (out / f"{NAME}_dict.txt").write_text("\n".join(chars) + "\n \n", encoding="utf-8")
-    with tempfile.TemporaryDirectory() as tmp:
-        stage = Path(tmp) / "stage"
-        stage.mkdir()
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
-        options.optimized_model_filepath = str(stage / f"{NAME}.onnx")
-        ort.InferenceSession(str(onnx), options, providers=["CPUExecutionProvider"])
-        subprocess.check_call(
-            [sys.executable, "-m", "onnxruntime.tools.convert_onnx_models_to_ort", str(stage),
-             "--optimization_style", "Fixed", "--target_platform", "arm"],
-            cwd=tmp,
-        )
-        shutil.copy2(stage / f"{NAME}.ort", out / f"{NAME}.ort")
+    subprocess.check_call([str(Path(__file__).with_name("models_to_ncnn.sh")), "rec", str(onnx), str(out), NAME])
 
 if __name__ == "__main__":
     main()
