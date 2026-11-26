@@ -2,11 +2,16 @@
 
 Sheet is GPL-3.0-or-later. It ships or builds on:
 
-- **ONNX Runtime** 1.31.1 (MIT), built from source from the
-  `external/onnxruntime` submodule by `scripts/build_onnxruntime.sh`.
-  Copyright (c) Microsoft Corporation.
+- **NCNN** 20261020 (BSD 3-Clause), built from source from the
+  `external/ncnn` submodule by `scripts/build_ncnn.sh`. Copyright (C) 2017
+  Tencent. It contains math routines under the zlib licence
+  (`neon_mathfun.h`, `sse_mathfun.h`, `avx_mathfun.h`), which are compiled
+  in. Licence texts in
+  `third_party_licenses/ncnn/LICENSE.txt` (a copy of the submodule's).
+- **LLVM OpenMP runtime and libc++** from the Android NDK (Apache-2.0 with
+  LLVM exceptions), linked into the same library.
 - **PaddleOCR PP-OCRv5 and PP-OCRv6** detection and recognition models with their
-  dictionaries (Apache-2.0), converted to ONNX Runtime's format, in
+  dictionaries (Apache-2.0), converted to NCNN's format, in
   `app/src/main/assets/paddleocr`. Copyright (c) PaddlePaddle Authors.
   Licence text and details in `third_party_licenses/paddleocr`.
 - **DocQuadNet-256**, the corner model with its trained weights in
