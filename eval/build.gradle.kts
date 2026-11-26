@@ -25,7 +25,6 @@ application {
 
 dependencies {
     implementation(project(":core"))
-    implementation(libs.onnxruntime.desktop)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))
     testImplementation(libs.junit)
@@ -37,4 +36,10 @@ tasks.test {
 
 tasks.named<JavaExec>("run") {
     workingDir = rootDir
+    val dir = layout.buildDirectory.dir("ncnn")
+    doFirst {
+        val lib = dir.get().asFile.listFiles { f -> f.name.startsWith("libsheet_ncnn.") }?.firstOrNull()
+            ?: throw GradleException("libsheet_ncnn is not built for this machine: run scripts/build_ncnn.sh host")
+        systemProperty("sheet.ncnn.library", lib.absolutePath)
+    }
 }
