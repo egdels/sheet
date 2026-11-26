@@ -3,4 +3,4 @@
 -keepattributes *Annotation*, InnerClasses
 -dontwarn org.slf4j.**
 
--keep class ai.onnxruntime.** { *; }
+-keepclasseswithmembernames class de.schliweb.sheet.core.ncnn.NcnnNet { native <methods>; }
