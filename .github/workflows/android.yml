@@ -23,27 +23,14 @@ jobs:
           packages: platform-tools
       - name: Install the Android platform and NDK
         run: sdkmanager --install "platforms;android-37.0" "ndk;28.0.13004108"
-      - name: ONNX Runtime commit
-        id: ort
-        run: echo "commit=$(git rev-parse HEAD:external/onnxruntime)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        id: ort-cache
-        with:
-          path: |
-            app/src/main/jniLibs
-            app/libs
-          key: ort-${{ steps.ort.outputs.commit }}-${{ hashFiles('ort/*.config', 'scripts/build_onnxruntime.sh', 'external/onnxruntime_pinned/*') }}
-      - name: Build ONNX Runtime
-        if: steps.ort-cache.outputs.cache-hit != 'true'
+      - name: Build NCNN
         env:
           ABIS: arm64-v8a x86_64
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.0.13004108
         run: |
-          sudo apt-get install -y ninja-build
-          pip install flatbuffers
-          git submodule update --init external/onnxruntime
-          git -C external/onnxruntime submodule update --init cmake/external/onnx
-          scripts/build_onnxruntime.sh
+          pip install --user cmake==3.31.6
+          git submodule update --init external/ncnn
+          NCNN_CMAKE="$HOME/.local/bin/cmake" scripts/build_ncnn.sh
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests
         run: ./gradlew :core:test :eval:test
