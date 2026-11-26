@@ -22,7 +22,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
-private const val USAGE = """usage: sheet-eval [--model <file.ort>] [--samples <out.tsv>] <dataset>...
+private const val USAGE = """usage: sheet-eval [--model <path without .ncnn.param/.ncnn.bin>] [--samples <out.tsv>] <dataset>...
        sheet-eval ocr [--max-side <px>] [--models <dir>] [--text <out dir>] <dir with *.gt.txt>...
 
 A dataset is a directory with images/ and labels/*.json (fields image,
@@ -68,7 +68,7 @@ fun main(args: Array<String>) {
         OcrEval.run(args.drop(1))
         return
     }
-    var model = File("app/src/main/assets/docquad/docquadnet256.ort")
+    var model = File("app/src/main/assets/docquad/docquadnet256")
     var samplesOut: File? = null
     val datasets = mutableListOf<File>()
     var i = 0
@@ -89,8 +89,8 @@ fun main(args: Array<String>) {
         exitProcess(2)
     }
     val samples = StringBuilder("dataset\timage\tstage\tmean_rel\tmax_rel\tiou\tconfidence\tangle\tquad\n")
-    OrtDocQuadModel(model).use { ort ->
-        val detector = CornerDetector(ort)
+    NcnnDocQuadModel(model).use { net ->
+        val detector = CornerDetector(net)
         println("model: ${model.path}\n")
         for (dataset in datasets) evaluate(dataset, detector, samples)
     }
